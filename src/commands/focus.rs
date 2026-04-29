@@ -99,7 +99,21 @@ fn append_session(path: &PathBuf, session: FocusSession) -> Result<()> {
         if raw.trim().is_empty() {
             FocusLog::default()
         } else {
-            serde_json::from_str(&raw).unwrap_or_default()
+            match serde_json::from_str::<FocusLog>(&raw) {
+                Ok(log) => log,
+                Err(e) => {
+                    let backup = path.with_extension("json.bak");
+                    fs::copy(path, &backup).with_context(|| {
+                        format!("failed to back up {}", path.display())
+                    })?;
+                    anyhow::bail!(
+                        "{} is not valid focus log JSON ({}). Backed up to {} — fix or delete it before retrying.",
+                        path.display(),
+                        e,
+                        backup.display()
+                    );
+                }
+            }
         }
     } else {
         FocusLog::default()

@@ -12,7 +12,13 @@ pub fn run() -> Result<()> {
     if let Some(host) = System::host_name() {
         println!("Host:      {}", host);
     }
-    println!("Uptime:    {}", format_duration(System::uptime()));
+    let uptime = System::uptime();
+    const MAX_REASONABLE_UPTIME_SECS: u64 = 10 * 365 * 86_400;
+    if uptime > MAX_REASONABLE_UPTIME_SECS {
+        println!("Uptime:    unavailable");
+    } else {
+        println!("Uptime:    {}", format_duration(uptime));
+    }
 
     println!();
     println!("== CPU ==");
