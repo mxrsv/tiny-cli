@@ -36,13 +36,55 @@ cargo run -- scan --min-size-mb 100 --older-than-days 30
 ```
 
 Scans `~/Downloads`, `~/Desktop`, and `~/Documents`. Reports the largest files
-and the oldest files that exceed the thresholds. **No files are deleted in
-v1** — this command is read-only.
+and the oldest files that exceed the thresholds. **`scan` is strictly
+read-only** — it never deletes anything. For cleanup, see `clean` below.
 
 Options:
 
 - `--min-size-mb` (default `100`): report files at or above this size.
 - `--older-than-days` (default `90`): report files older than this many days.
+
+### `clean` — interactive cleanup of caches and recoverable data (macOS)
+
+```bash
+tiny clean                              # picker → plan → action menu
+tiny clean --dry-run                    # show plan and exit, no prompt
+tiny clean --include-review             # also list review-risk caches
+tiny clean --include-destructive        # also list Trash
+tiny clean --category user-logs         # interactive, scoped to one category
+tiny clean --category trash --hard      # the only sanctioned way to empty Trash
+TINY_CONFIRM_HARD=1 tiny clean --category cargo --hard -y   # non-interactive permanent delete
+```
+
+The default picker shows only **safe** categories (`user-logs`,
+`xcode-derived`). Add `--include-review` for developer caches that may want
+review (`user-caches`, `xcode-archives`, `xcode-devicesupport`, `cargo`,
+`npm`, `pnpm`, `yarn`). Add `--include-destructive` to surface `trash`. Use
+`--category <id>` to target a single category — repeating the flag is fine
+(`--category user-logs --category xcode-derived`).
+
+**Safety model:**
+
+- Default action is **Move to Trash** (recoverable).
+- `--hard` is permanent; without `-y` it requires a Y/n confirmation, with
+  `-y` it requires `TINY_CONFIRM_HARD=1` in the environment.
+- `--yes` requires `--category` so the scope is always explicit.
+- The Trash provider is wired so only `Hard delete` reaches it (mapped to
+  Finder's empty-trash); `Move to Trash` for the trash category is rejected.
+- Discovery skips a category whose owning app is currently running
+  (e.g. `xcode-derived` when Xcode is open).
+- All filesystem walks are symlink-safe — symlinked directories are never
+  followed, so we cannot delete data outside the listed paths.
+
+> Note: even Move to Trash is destructive if macOS "Empty Trash automatically"
+> (System Settings → General → Storage) is on. Use `--dry-run` first or
+> disable that setting.
+
+`scan` vs `clean` at a glance: `scan` is read-only and surfaces personal
+files in `~/Downloads` / `~/Desktop` / `~/Documents` so you can review and
+decide. `clean` is interactive deletion of developer caches and recoverable
+data. They are intentionally separate — personal files never appear in
+`clean`.
 
 ### `focus` — local focus timer
 
