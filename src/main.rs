@@ -15,5 +15,6 @@ fn main() -> Result<()> {
         Commands::Scan(opts) => commands::scan::run(opts),
         Commands::Focus(opts) => commands::focus::run(opts),
         Commands::Uninstall(opts) => commands::uninstall::run(opts),
+        Commands::Clean(opts) => commands::clean::run(opts),
     }
 }

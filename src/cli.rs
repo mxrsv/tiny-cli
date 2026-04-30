@@ -25,6 +25,9 @@ pub enum Commands {
 
     /// Uninstall apps from /Applications and clean ~/Library leftovers
     Uninstall(UninstallOpts),
+
+    /// Interactive cleanup of developer caches and recoverable data
+    Clean(CleanOpts),
 }
 
 #[derive(Args, Debug)]
@@ -80,6 +83,33 @@ pub enum SortBy {
     Size,
     /// Alphabetical
     Name,
+}
+
+#[derive(Args, Debug)]
+pub struct CleanOpts {
+    /// Show the report and exit without prompting for cleanup.
+    #[arg(long, conflicts_with = "yes")]
+    pub dry_run: bool,
+
+    /// Skip the picker and the action menu. Requires --category.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
+
+    /// Use permanent deletion instead of Move to Trash. NOT recoverable.
+    #[arg(long)]
+    pub hard: bool,
+
+    /// Restrict discovery and selection to the named category. Repeatable.
+    #[arg(long, action = clap::ArgAction::Append)]
+    pub category: Vec<String>,
+
+    /// Show review-risk categories in the picker (unchecked).
+    #[arg(long)]
+    pub include_review: bool,
+
+    /// Show destructive categories such as Trash in the picker (unchecked).
+    #[arg(long)]
+    pub include_destructive: bool,
 }
 
 #[derive(Args, Debug)]
