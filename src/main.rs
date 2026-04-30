@@ -12,7 +12,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Sys => commands::sys::run(),
-        Commands::Clean(opts) => commands::clean::run(opts),
+        Commands::Scan(opts) => commands::scan::run(opts),
         Commands::Focus(opts) => commands::focus::run(opts),
         Commands::Uninstall(opts) => commands::uninstall::run(opts),
     }

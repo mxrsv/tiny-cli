@@ -18,7 +18,7 @@ pub enum Commands {
     Sys,
 
     /// Scan common folders and report large or old files (read-only)
-    Clean(CleanOpts),
+    Scan(ScanOpts),
 
     /// Run a focus timer session and log it locally
     Focus(FocusOpts),
@@ -28,7 +28,7 @@ pub enum Commands {
 }
 
 #[derive(Args, Debug)]
-pub struct CleanOpts {
+pub struct ScanOpts {
     /// Report files at or above this size in megabytes
     #[arg(long, default_value_t = 100)]
     pub min_size_mb: u64,

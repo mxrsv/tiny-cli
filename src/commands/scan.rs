@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 
-use crate::cli::CleanOpts;
+use crate::cli::ScanOpts;
 use crate::util::format_bytes;
 
 const TARGET_FOLDERS: [&str; 3] = ["Downloads", "Desktop", "Documents"];
@@ -24,7 +24,7 @@ fn should_skip_dir(name: &str) -> bool {
     SKIP_DIR_NAMES.iter().any(|s| *s == name)
 }
 
-pub fn run(opts: CleanOpts) -> Result<()> {
+pub fn run(opts: ScanOpts) -> Result<()> {
     let home = home_dir().context("could not resolve user home directory")?;
     let min_size_bytes = opts.min_size_mb.saturating_mul(1024 * 1024);
     let older_than_secs = opts.older_than_days.saturating_mul(86_400);
@@ -152,4 +152,3 @@ fn scan_dir(
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
-

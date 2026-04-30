@@ -28,11 +28,11 @@ cargo run -- sys
 Reports OS, host, uptime, CPU count and model, memory usage, and per-disk
 usage.
 
-### `clean` — scan common folders, report only
+### `scan` — scan common folders, report only
 
 ```bash
-cargo run -- clean
-cargo run -- clean --min-size-mb 100 --older-than-days 30
+cargo run -- scan
+cargo run -- scan --min-size-mb 100 --older-than-days 30
 ```
 
 Scans `~/Downloads`, `~/Desktop`, and `~/Documents`. Reports the largest files
