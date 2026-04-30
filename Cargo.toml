@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "A small, practical Rust CLI for performance and productivity utilities"
 license = "MIT"
+authors = ["mxrsv"]
+repository = "https://github.com/mxrsv/tiny-cli"
+homepage = "https://github.com/mxrsv/tiny-cli"
+readme = "README.md"
+keywords = ["cli", "productivity", "system", "focus", "utility"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "tiny"

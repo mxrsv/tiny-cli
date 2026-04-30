@@ -1,6 +1,8 @@
 use anyhow::Result;
 use sysinfo::{Disks, System};
 
+use crate::util::{format_bytes, format_duration};
+
 pub fn run() -> Result<()> {
     let mut system = System::new_all();
     system.refresh_all();
@@ -61,33 +63,3 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{} {}", bytes, UNITS[unit])
-    } else {
-        format!("{:.2} {}", value, UNITS[unit])
-    }
-}
-
-fn format_duration(seconds: u64) -> String {
-    let days = seconds / 86_400;
-    let hours = (seconds % 86_400) / 3_600;
-    let minutes = (seconds % 3_600) / 60;
-    let secs = seconds % 60;
-    if days > 0 {
-        format!("{}d {}h {}m", days, hours, minutes)
-    } else if hours > 0 {
-        format!("{}h {}m", hours, minutes)
-    } else if minutes > 0 {
-        format!("{}m {}s", minutes, secs)
-    } else {
-        format!("{}s", secs)
-    }
-}
