@@ -8,6 +8,21 @@ use crate::cli::CleanOpts;
 use crate::util::format_bytes;
 
 const TARGET_FOLDERS: [&str; 3] = ["Downloads", "Desktop", "Documents"];
+const MAX_DEPTH: usize = 12;
+const SKIP_DIR_NAMES: &[&str] = &[
+    // VCS
+    ".git", ".svn", ".hg",
+    // Package / build outputs that explode in size and noise
+    "node_modules", "vendor", "target", "build", "dist", ".next", ".nuxt",
+    ".turbo", ".cache", "__pycache__", ".venv", "venv",
+    // macOS metadata
+    ".Trash", ".Spotlight-V100", ".fseventsd", ".DocumentRevisions-V100",
+    ".TemporaryItems", ".DS_Store",
+];
+
+fn should_skip_dir(name: &str) -> bool {
+    SKIP_DIR_NAMES.iter().any(|s| *s == name)
+}
 
 pub fn run(opts: CleanOpts) -> Result<()> {
     let home = home_dir().context("could not resolve user home directory")?;
@@ -30,7 +45,14 @@ pub fn run(opts: CleanOpts) -> Result<()> {
         if !dir.is_dir() {
             continue;
         }
-        scan_dir(&dir, min_size_bytes, older_than_secs, &mut large, &mut old);
+        scan_dir(
+            &dir,
+            min_size_bytes,
+            older_than_secs,
+            0,
+            &mut large,
+            &mut old,
+        );
     }
 
     large.sort_by(|a, b| b.size.cmp(&a.size));
@@ -70,9 +92,13 @@ fn scan_dir(
     dir: &Path,
     min_size: u64,
     older_than_secs: u64,
+    depth: usize,
     large: &mut Vec<FileEntry>,
     old: &mut Vec<FileEntry>,
 ) {
+    if depth >= MAX_DEPTH {
+        return;
+    }
     let entries = match fs::read_dir(dir) {
         Ok(it) => it,
         Err(_) => return,
@@ -86,7 +112,12 @@ fn scan_dir(
         };
 
         if metadata.is_dir() {
-            scan_dir(&path, min_size, older_than_secs, large, old);
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if should_skip_dir(&name_str) {
+                continue;
+            }
+            scan_dir(&path, min_size, older_than_secs, depth + 1, large, old);
             continue;
         }
         if !metadata.is_file() {

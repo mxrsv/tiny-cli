@@ -11,6 +11,26 @@ use crate::util::format_bytes;
 const APPLICATIONS_DIR: &str = "/Applications";
 const SYSTEM_BUNDLE_PREFIX: &str = "com.apple.";
 
+/// Apple-managed apps that may appear in /Applications across macOS versions.
+/// Used as a fallback guard when CFBundleIdentifier cannot be read (e.g.
+/// `defaults` fails inside a sandbox). Match is case-insensitive against
+/// the .app file stem.
+const SYSTEM_APP_NAMES: &[&str] = &[
+    "Safari", "Mail", "Messages", "FaceTime", "Calendar", "Contacts", "Reminders",
+    "Notes", "Maps", "Photos", "Music", "Podcasts", "TV", "News", "Stocks",
+    "Voice Memos", "Home", "Find My", "Books", "Calculator", "Chess",
+    "Dictionary", "Image Capture", "Photo Booth", "Preview", "QuickTime Player",
+    "Stickies", "TextEdit", "Time Machine", "App Store", "System Preferences",
+    "System Settings", "Siri", "Mission Control", "Launchpad",
+    "Utilities", "Automator", "Font Book", "Migration Assistant",
+];
+
+fn is_known_system_app_name(name: &str) -> bool {
+    SYSTEM_APP_NAMES
+        .iter()
+        .any(|sys| sys.eq_ignore_ascii_case(name))
+}
+
 pub fn run(opts: UninstallOpts) -> Result<()> {
     let targets = match opts.name.clone() {
         Some(name) => vec![resolve_app_by_name(&name)?],
@@ -377,10 +397,17 @@ fn build_plan(app: &AppEntry, opts: &UninstallOpts) -> Result<Plan> {
     let mut items: Vec<RemovalItem> = Vec::new();
     let mut blocked: Option<String> = None;
 
-    if let Some(bid) = &app.bundle_id {
-        if bid.starts_with(SYSTEM_BUNDLE_PREFIX) {
+    match &app.bundle_id {
+        Some(bid) if bid.starts_with(SYSTEM_BUNDLE_PREFIX) => {
             blocked = Some(format!("system app ({}) — refuse", bid));
         }
+        None if is_known_system_app_name(&app.name) => {
+            blocked = Some(format!(
+                "looks like a system app ({}) and CFBundleIdentifier could not be read — refuse",
+                app.name
+            ));
+        }
+        _ => {}
     }
 
     if blocked.is_none() && is_brew_cask(&app.name) && !opts.force {
@@ -416,60 +443,59 @@ fn is_brew_cask(name: &str) -> bool {
     path.is_dir()
 }
 
-fn find_leftovers(app_name: &str, bundle_id: Option<&str>) -> Vec<RemovalItem> {
+fn find_leftovers(_app_name: &str, bundle_id: Option<&str>) -> Vec<RemovalItem> {
     let mut items = Vec::new();
     let home = match std::env::var_os("HOME").map(PathBuf::from) {
         Some(h) => h,
         None => return items,
     };
 
+    // Only scan when we have a bundle ID. Name-keyed fallback was removed
+    // because it can collide with system folders for apps with generic names
+    // (e.g. "Mail", "Notes" → /Library/Application Support/<system-folder>).
+    let bid = match bundle_id {
+        Some(b) => b,
+        None => return items,
+    };
+
     let mut candidates: Vec<PathBuf> = Vec::new();
+    candidates.push(home.join("Library/Application Support").join(bid));
+    candidates.push(home.join("Library/Caches").join(bid));
+    candidates.push(home.join("Library/Preferences").join(format!("{}.plist", bid)));
+    candidates.push(home.join("Library/Containers").join(bid));
+    candidates.push(
+        home.join("Library/Saved Application State")
+            .join(format!("{}.savedState", bid)),
+    );
+    candidates.push(home.join("Library/HTTPStorages").join(bid));
+    candidates.push(
+        home.join("Library/HTTPStorages")
+            .join(format!("{}.binarycookies", bid)),
+    );
+    candidates.push(home.join("Library/WebKit").join(bid));
 
-    // Bundle-id-keyed locations
-    if let Some(bid) = bundle_id {
-        candidates.push(home.join("Library/Application Support").join(bid));
-        candidates.push(home.join("Library/Caches").join(bid));
-        candidates.push(home.join("Library/Preferences").join(format!("{}.plist", bid)));
-        candidates.push(home.join("Library/Containers").join(bid));
-        candidates.push(
-            home.join("Library/Saved Application State")
-                .join(format!("{}.savedState", bid)),
-        );
-        candidates.push(home.join("Library/HTTPStorages").join(bid));
-        candidates.push(
-            home.join("Library/HTTPStorages")
-                .join(format!("{}.binarycookies", bid)),
-        );
-        candidates.push(home.join("Library/WebKit").join(bid));
-
-        // LaunchAgents pattern <bundle_id>*.plist
-        if let Ok(entries) = fs::read_dir(home.join("Library/LaunchAgents")) {
-            for e in entries.flatten() {
-                let p = e.path();
-                if let Some(stem) = p.file_name().and_then(|s| s.to_str()) {
-                    if stem.starts_with(bid) {
-                        candidates.push(p);
-                    }
-                }
-            }
-        }
-        // Group Containers — substring match on bundle id
-        if let Ok(entries) = fs::read_dir(home.join("Library/Group Containers")) {
-            for e in entries.flatten() {
-                let p = e.path();
-                if let Some(stem) = p.file_name().and_then(|s| s.to_str()) {
-                    if stem.contains(bid) {
-                        candidates.push(p);
-                    }
+    // LaunchAgents pattern <bundle_id>*.plist
+    if let Ok(entries) = fs::read_dir(home.join("Library/LaunchAgents")) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if let Some(stem) = p.file_name().and_then(|s| s.to_str()) {
+                if stem.starts_with(bid) {
+                    candidates.push(p);
                 }
             }
         }
     }
-
-    // Name-keyed fallback locations
-    candidates.push(home.join("Library/Application Support").join(app_name));
-    candidates.push(home.join("Library/Logs").join(app_name));
-    candidates.push(home.join("Library/Caches").join(app_name));
+    // Group Containers — substring match on bundle id
+    if let Ok(entries) = fs::read_dir(home.join("Library/Group Containers")) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if let Some(stem) = p.file_name().and_then(|s| s.to_str()) {
+                if stem.contains(bid) {
+                    candidates.push(p);
+                }
+            }
+        }
+    }
 
     for path in candidates {
         if !path.exists() {
@@ -552,12 +578,16 @@ fn move_to_trash(path: &Path) -> Result<()> {
     let posix = path
         .to_str()
         .ok_or_else(|| anyhow!("non-utf8 path: {}", path.display()))?;
-    let script = format!(
-        r#"tell application "Finder" to delete (POSIX file "{}" as alias)"#,
-        posix.replace('"', "\\\"")
-    );
+    // Pass the path as `argv` (item 1 of argv) instead of interpolating it
+    // into the script. Avoids any AppleScript escaping concerns even if the
+    // path contains backslashes, quotes, or newlines.
+    let script = "on run argv\n\
+                  tell application \"Finder\" to delete (POSIX file (item 1 of argv) as alias)\n\
+                  end run";
     let output = Command::new("osascript")
-        .args(["-e", &script])
+        .arg("-e")
+        .arg(script)
+        .arg(posix)
         .output()
         .with_context(|| format!("failed to spawn osascript for {}", path.display()))?;
     if !output.status.success() {
