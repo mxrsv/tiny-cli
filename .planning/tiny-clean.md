@@ -277,3 +277,160 @@ cargo run -- clean
 - Whether `--category` should accept only one category or allow multiple values.
 - Whether app leftovers should reuse `uninstall` internals immediately or wait
   for a shared helper refactor.
+
+## Review Findings — must resolve before implementation
+
+The items below were raised in plan review. They must be addressed (either fixed
+in this plan or explicitly accepted with rationale) before any code lands.
+
+### Blockers
+
+#### B1. Wholesale `~/Library/Caches/*` deletion can corrupt running apps
+
+The plan currently lists `User caches: ~/Library/Caches/*` as a Safe category
+that is visible and selected by default. In practice that directory holds live
+state for running apps (Mail offline cache, browser session, CloudKit, IM
+caches, signed sessions in `HTTPStorages`/`WebKit`). Deleting blindly while an
+app is open can crash the app, log the user out, or lose unsynced data.
+
+Fix:
+
+- Demote `User caches` to Review for v1, or
+- Keep it Safe only if the provider skips any subdirectory whose bundle id
+  matches a currently running process. Implement with `pgrep`/`launchctl` or
+  `lsof +D`. Skipped subdirs must be reported with a clear "quit X and rerun"
+  hint.
+- Either way, document in this plan which cache subdirectories are considered
+  safe to clear unconditionally (e.g. `Homebrew`, `pip`, `Yarn`, framework dev
+  caches) versus those that need the running-app check.
+
+#### B2. `--hard -y` with no extra gate is a one-line data loss command
+
+`tiny clean` operates on a much larger blast radius than `tiny uninstall`
+(potentially many categories × many files). The current plan inherits the
+uninstall pattern where `-y` skips the hard-delete confirm. A single
+`tiny clean --hard -y` could permanently destroy 30+ GB across cache, Xcode
+DerivedData, Trash, and leftovers with no recovery path.
+
+Fix:
+
+- `--hard` without `-y` → require an interactive confirm (Y/n, default n),
+  matching `uninstall.rs`.
+- `--hard -y` → require an additional explicit gate. Either an env var
+  `TINY_CONFIRM_HARD=1` or a flag such as `--i-know-what-im-doing`. Without
+  the gate, refuse and exit non-zero.
+- `--include-destructive --hard -y` → refuse outright with a clear error,
+  even if the gate above is set, unless `--category` pins the destructive
+  category explicitly.
+
+#### B3. Trash provider with default "Move to Trash" action is a silent no-op
+
+The Destructive category `User Trash: ~/.Trash` cannot be moved to Trash —
+the operation is meaningless and will either silently succeed or fail with
+an opaque osascript error, leaving the user believing Trash was emptied.
+
+Fix:
+
+- Trash provider must only accept `Hard` (empty trash) as its execute action.
+- When the user selects Trash in the picker but the chosen action is Trash,
+  either downgrade that single category to Hard with a printed warning, or
+  abort and ask the user to choose a different action.
+- Implementation must use
+  `osascript -e 'tell application "Finder" to empty trash'`, not file-by-file
+  deletion (slow, can hit SIP/permission errors).
+
+### High-severity issues
+
+#### H1. `tiny clean -y` does not define what "default selection" means
+
+The text "moves selected/default safe items to Trash" admits at least three
+interpretations: all safe categories, nothing, or only the category passed via
+`--category`. This must be pinned before any code is written.
+
+Fix: `-y` without `--category` exits with a non-zero status and the message
+`error: --yes requires --category to specify scope`. `-y --category <id>`
+runs the named category(ies) only. This mirrors how `tiny uninstall` requires
+either a `name` argument or the picker.
+
+#### H2. "Old/large files in Downloads/Desktop/Documents" duplicates `tiny scan`
+
+That category overlaps with `tiny scan` (read-only, file-level) and creates
+two sources of truth for thresholds. More importantly, surfacing it inside a
+`MultiSelect` picker means a single space-bar press toggles thousands of
+personal files for deletion — the exact failure mode the plan tries to avoid.
+
+Fix:
+
+- Remove the category from v1.
+- Update Non-goals to state that `tiny clean` does not surface personal files
+  from `Downloads`, `Desktop`, or `Documents`. The intended workflow is
+  `tiny scan` to inspect, then manual `rm`/`mv` by the user.
+- Revisit in a later version as a dedicated interactive flow if needed.
+
+#### H3. `~/.cargo` "selected subdirectories" is too vague — risks deleting toolchain
+
+`~/.cargo` contains both `bin/` (rustup toolchain binaries) and registry/git
+caches. The plan does not pin which subdirectories are in scope. The same
+gap applies to npm/pnpm/yarn, where hardcoded paths break for users with
+custom prefixes.
+
+Fix: pin exact paths in this plan.
+
+- Cargo, safe to clean: `~/.cargo/registry/cache`, `~/.cargo/registry/src`,
+  `~/.cargo/git/db`, `~/.cargo/git/checkouts`.
+- Cargo, never touch: `~/.cargo/bin`, `~/.cargo/config.toml`,
+  `~/.cargo/credentials*`. Do not touch `~/.rustup` at all.
+- npm: query `npm config get cache` at runtime; do not assume `~/.npm`.
+- pnpm: query `pnpm store path`.
+- yarn: query `yarn cache dir`.
+- If the corresponding CLI is not installed, skip the provider silently.
+
+#### H4. Symlink-safety is not enforced at the code level
+
+The Safety Rules mention not following symlinks, but the existing
+`dir_size` helper in `uninstall.rs` uses `is_dir()`, which follows symlinks.
+`fs::remove_dir_all` also walks into symlinked directories and can delete
+content on the symlink target.
+
+Fix: add a "Symlink-safe FS helpers" subsection that mandates:
+
+- All metadata reads use `symlink_metadata()`.
+- Replace `fs::remove_dir_all` with a custom walker that refuses to descend
+  into symlinks.
+- Add a test case that creates a symlink inside a discovered category,
+  runs discovery and execution, and asserts the symlink target is untouched.
+
+#### H5. Interaction between `--category`, `--include-review`, `--include-destructive` is undefined
+
+Without an explicit rule, combinations like `--category trash` (with no
+`--include-destructive`) or `--category caches --include-destructive` have no
+clear behavior, and downstream code will encode whichever interpretation
+happens first.
+
+Fix: pin the matrix.
+
+- `--category <id>` always overrides risk gating. The user has named the
+  category explicitly, so neither `--include-review` nor `--include-destructive`
+  is required.
+- `--include-review` and `--include-destructive` apply only when `--category`
+  is not set; they expand the default picker.
+- `--category` may be repeated (`--category caches --category logs`); use
+  clap `action = Append`. Avoid comma-separated values.
+- Validate category ids at the CLI layer; on unknown id, print the list of
+  valid ids and exit non-zero.
+
+#### H6. No check for running apps or running builds before deletion
+
+Deleting Xcode DerivedData mid-build, `cargo registry/src` mid-`cargo build`,
+or an app's cache while the app is open can corrupt state in subtle ways.
+Safety Rules currently say nothing about process state.
+
+Fix: add to Safety Rules.
+
+- Before discovering or executing a category tied to a specific app
+  (Xcode, Cargo, Slack, etc.), check for running processes via
+  `pgrep -x <name>` or equivalent.
+- On a match, skip that category at execution time and log
+  "<App> is running; skipping <category>. Quit <App> and rerun."
+- Heuristic accuracy is acceptable; the goal is to prevent the obvious
+  in-flight cases, not to be airtight.
