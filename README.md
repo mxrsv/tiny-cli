@@ -55,6 +55,27 @@ Runs a synchronous timer with a simple progress bar. When the session ends,
 the entry is appended to `~/.tiny-cli/focus-sessions.json` so you have a
 record of completed sessions.
 
+### `uninstall` — remove apps and their `~/Library` leftovers (macOS)
+
+```bash
+tiny uninstall                          # interactive picker (sorted by least-used)
+tiny uninstall AltTab                   # dry-run report for one app
+tiny uninstall AltTab --apply           # confirm prompt, then move to Trash
+tiny uninstall AltTab --apply -y        # skip the final confirm
+tiny uninstall AltTab --apply --shallow # only /Applications/<Name>.app
+tiny uninstall AltTab --apply --leftovers-only  # only ~/Library cleanup
+tiny uninstall AltTab --apply --hard    # rm -rf, NOT recoverable
+```
+
+**Safety:**
+
+- Default is **dry-run** — nothing is removed without `--apply`.
+- Default destination is **Trash** (recoverable) via `osascript`.
+- Refuses system apps (`com.apple.*`) and Homebrew casks (use `brew uninstall --cask`; pass `--force` to override).
+- Final `[y/N]` confirmation before any removal (skip with `-y`).
+
+**Picker sorts:** `--sort=last-used` (default), `size`, `name`.
+
 ## Roadmap
 
 - `files` — richer filesystem analytics (duplicates, by-extension breakdowns).
