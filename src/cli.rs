@@ -43,11 +43,11 @@ pub struct UninstallOpts {
     /// App name (e.g. "Cursor"). If omitted, an interactive picker is shown.
     pub name: Option<String>,
 
-    /// Actually move items to Trash. Without this flag, only reports.
+    /// Only show the report and exit. Does not prompt for action.
     #[arg(long)]
-    pub apply: bool,
+    pub dry_run: bool,
 
-    /// Skip the final Yes/No confirmation prompt.
+    /// Skip the action menu and execute immediately (Trash, or rm -rf if --hard).
     #[arg(short = 'y', long)]
     pub yes: bool,
 

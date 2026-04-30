@@ -58,21 +58,27 @@ record of completed sessions.
 ### `uninstall` — remove apps and their `~/Library` leftovers (macOS)
 
 ```bash
-tiny uninstall                          # interactive picker (sorted by least-used)
-tiny uninstall AltTab                   # dry-run report for one app
-tiny uninstall AltTab --apply           # confirm prompt, then move to Trash
-tiny uninstall AltTab --apply -y        # skip the final confirm
-tiny uninstall AltTab --apply --shallow # only /Applications/<Name>.app
-tiny uninstall AltTab --apply --leftovers-only  # only ~/Library cleanup
-tiny uninstall AltTab --apply --hard    # rm -rf, NOT recoverable
+tiny uninstall                       # picker → report → action menu
+tiny uninstall AltTab                # report → action menu
+tiny uninstall AltTab --dry-run      # report only, no prompt
+tiny uninstall AltTab -y             # skip menu, move to Trash immediately
+tiny uninstall AltTab --hard -y      # skip menu, rm -rf (advanced)
+tiny uninstall AltTab --shallow      # only /Applications/<Name>.app
+tiny uninstall AltTab --leftovers-only  # only ~/Library cleanup
 ```
+
+After the report, an action menu lets you choose:
+
+- **Move to Trash (recoverable)** — default, safe
+- **Dry-run (no changes)**
+- **Hard delete (NOT recoverable)** — extra confirm prompt before touching anything
+- **Cancel**
 
 **Safety:**
 
-- Default is **dry-run** — nothing is removed without `--apply`.
-- Default destination is **Trash** (recoverable) via `osascript`.
+- Default action highlights "Move to Trash" — you must press Enter, nothing auto-runs.
+- Trash is recoverable; hard delete requires a separate `[y/N]` confirmation.
 - Refuses system apps (`com.apple.*`) and Homebrew casks (use `brew uninstall --cask`; pass `--force` to override).
-- Final `[y/N]` confirmation before any removal (skip with `-y`).
 
 **Picker sorts:** `--sort=last-used` (default), `size`, `name`.
 

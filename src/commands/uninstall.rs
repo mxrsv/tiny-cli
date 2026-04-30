@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
-use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect};
+use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 
 use crate::cli::{SortBy, UninstallOpts};
 use crate::util::format_bytes;
@@ -29,12 +29,6 @@ pub fn run(opts: UninstallOpts) -> Result<()> {
 
     print_plans(&plans, &opts);
 
-    if !opts.apply {
-        println!();
-        println!("(dry-run — pass --apply to actually remove)");
-        return Ok(());
-    }
-
     let blocked: Vec<&Plan> = plans.iter().filter(|p| p.blocked.is_some()).collect();
     if !blocked.is_empty() {
         anyhow::bail!(
@@ -43,14 +37,90 @@ pub fn run(opts: UninstallOpts) -> Result<()> {
         );
     }
 
-    if !opts.yes && !final_confirm(&plans, opts.hard)? {
-        println!("Aborted.");
-        return Ok(());
+    let action = decide_action(&opts)?;
+    match action {
+        Action::DryRun => {
+            println!();
+            println!("(dry-run — no changes made)");
+            Ok(())
+        }
+        Action::Cancel => {
+            println!("Aborted.");
+            Ok(())
+        }
+        Action::Trash | Action::Hard => {
+            let hard = matches!(action, Action::Hard);
+            if hard && !opts.yes && !confirm_hard_delete(&plans)? {
+                println!("Aborted.");
+                return Ok(());
+            }
+            run_removal(&plans, hard)
+        }
     }
+}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Trash,
+    Hard,
+    DryRun,
+    Cancel,
+}
+
+fn decide_action(opts: &UninstallOpts) -> Result<Action> {
+    if opts.dry_run {
+        return Ok(Action::DryRun);
+    }
+    if opts.yes {
+        return Ok(if opts.hard { Action::Hard } else { Action::Trash });
+    }
+    let items = [
+        "Move to Trash (recoverable)",
+        "Dry-run (no changes)",
+        "Hard delete (NOT recoverable)",
+        "Cancel",
+    ];
+    let default_idx = if opts.hard { 2 } else { 0 };
+    let idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("What to do?")
+        .items(&items)
+        .default(default_idx)
+        .interact()
+        .context("action menu failed")?;
+    Ok(match idx {
+        0 => Action::Trash,
+        1 => Action::DryRun,
+        2 => Action::Hard,
+        _ => Action::Cancel,
+    })
+}
+
+fn confirm_hard_delete(plans: &[Plan]) -> Result<bool> {
+    let total: u64 = plans.iter().map(|p| p.total_size()).sum();
+    let prompt = format!(
+        "PERMANENTLY DELETE {} ({}) — this CANNOT be undone. Are you sure?",
+        plural(plans.iter().map(|p| p.items.len()).sum::<usize>(), "item"),
+        format_bytes(total)
+    );
+    Ok(Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .default(false)
+        .interact()
+        .context("hard-delete confirm prompt failed")?)
+}
+
+fn plural(n: usize, label: &str) -> String {
+    if n == 1 {
+        format!("{} {}", n, label)
+    } else {
+        format!("{} {}s", n, label)
+    }
+}
+
+fn run_removal(plans: &[Plan], hard: bool) -> Result<()> {
     let mut failures: Vec<String> = Vec::new();
-    for plan in &plans {
-        match execute_plan(plan, opts.hard) {
+    for plan in plans {
+        match execute_plan(plan, hard) {
             Ok(()) => println!("✓ removed {}", plan.app.name),
             Err(e) => {
                 println!("✗ {}: {}", plan.app.name, e);
@@ -58,7 +128,6 @@ pub fn run(opts: UninstallOpts) -> Result<()> {
             }
         }
     }
-
     if !failures.is_empty() {
         anyhow::bail!("failed to fully remove: {}", failures.join(", "));
     }
@@ -464,18 +533,6 @@ fn print_plans(plans: &[Plan], opts: &UninstallOpts) {
         println!();
     }
     println!("Grand total: {}", format_bytes(grand_total));
-}
-
-fn final_confirm(plans: &[Plan], hard: bool) -> Result<bool> {
-    let item_count: usize = plans.iter().map(|p| p.items.len()).sum();
-    let total: u64 = plans.iter().map(|p| p.total_size()).sum();
-    let action = if hard { "PERMANENTLY DELETE" } else { "Move to Trash" };
-    let prompt = format!("{} {} item(s) ({})?", action, item_count, format_bytes(total));
-    Ok(Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .default(false)
-        .interact()
-        .context("confirm prompt failed")?)
 }
 
 // ---------- Execution ----------
