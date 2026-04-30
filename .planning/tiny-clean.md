@@ -175,9 +175,9 @@ and tests.
 
 ### Destructive (hidden until `--include-destructive` or `--category`)
 
-| id      | Label      | Path(s)    | Notes                                                                                                                                         |
-| ------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trash` | User Trash | `~/.Trash` | Only accepts `Hard` action. See B3. Implementation uses `osascript -e 'tell application "Finder" to empty trash'`, not file-by-file deletion. |
+| id      | Label      | Path(s)    | Notes                                                                                                                                                                                                                     |
+| ------- | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trash` | User Trash | `~/.Trash` | Only accepts `ExecAction::EmptyTrash` (mapped from UI `Hard delete`). Rejects `Trash` and `HardDelete`. See B3. Implementation uses `osascript -e 'tell application "Finder" to empty trash'`, not file-by-file deletion. |
 
 ### Excluded from v1
 
@@ -247,10 +247,17 @@ pub struct CleanItem {
     pub risk: RiskLevel,
 }
 
-/// What the user picked in the action menu, normalised.
-/// Trash and HardDelete are the only ones that reach providers' execute().
-pub enum ExecAction { Trash, HardDelete }
+/// What reaches a provider's execute(). Three semantics, distinct on
+/// purpose so providers can't accidentally conflate them:
+/// - `Trash`: move each item to ~/.Trash via Finder.
+/// - `HardDelete`: file-by-file recursive permanent removal.
+/// - `EmptyTrash`: invoke Finder's "empty trash" — only Trash provider
+///   accepts this, and it accepts only this.
+pub enum ExecAction { Trash, HardDelete, EmptyTrash }
 
+/// What the user sees in the action menu. The orchestrator (`execute.rs`)
+/// maps `HardDelete` → `ExecAction::EmptyTrash` for the Trash provider, and
+/// → `ExecAction::HardDelete` for everyone else.
 pub enum CleanAction { Trash, HardDelete, DryRun, Cancel }
 
 pub struct ExecReport {
@@ -273,10 +280,17 @@ Command flow:
    skip picker, skip action menu, execute action implied by `--hard`.
 8. Otherwise: show picker, then build plan from selected categories, print
    plan, show action menu, execute.
-9. If Trash category is in the plan but the chosen action is Trash, abort
-   the run with a clear error: "trash category requires --hard".
-10. Execute via per-provider `execute()`. Continue on per-item failure;
-    summarize at end.
+9. If Trash category is in the plan but the chosen `CleanAction` is `Trash`,
+   abort with a clear error: "trash category requires --hard".
+10. Map `CleanAction` to per-provider `ExecAction`:
+    - `CleanAction::Trash` → `ExecAction::Trash` for every provider. Trash
+      provider rejects this in step 9 above.
+    - `CleanAction::HardDelete` → `ExecAction::EmptyTrash` for the Trash
+      provider, `ExecAction::HardDelete` for everyone else.
+11. Execute via per-provider `execute()`. Each provider validates the
+    incoming `ExecAction` and rejects unsupported variants (Trash provider
+    rejects everything except `EmptyTrash`; other providers reject
+    `EmptyTrash`). Continue on per-item failure; summarize at end.
 
 ## Safety Rules
 
@@ -369,7 +383,12 @@ Automated tests:
 - `--hard` without `-y` and without confirm exits non-zero.
 - `--hard -y` without `TINY_CONFIRM_HARD=1` exits non-zero.
 - `--include-destructive --hard -y` (no `--category`) exits non-zero.
-- Trash provider with action `Trash` is rejected (must be `Hard`).
+- Trash provider rejects `ExecAction::Trash` and `ExecAction::HardDelete`;
+  accepts only `ExecAction::EmptyTrash`.
+- Non-trash providers reject `ExecAction::EmptyTrash`.
+- Action mapping in `execute.rs`: UI `HardDelete` maps to
+  `ExecAction::EmptyTrash` for the Trash provider and `ExecAction::HardDelete`
+  for every other provider.
 - `--category` with unknown id exits non-zero with the valid id list printed.
 - `--category` may be repeated.
 - Cargo provider only includes pinned subdirs; never includes `bin/`,
@@ -426,3 +445,6 @@ final plan above.)
   category; H3 pinned exact cargo paths and runtime-query for npm/pnpm/yarn;
   H4 dedicated symlink-safe FS helpers; H5 pinned flag interaction matrix;
   H6 running-app skip rule).
+- Post-review tweak: split `ExecAction::EmptyTrash` out from `HardDelete` so
+  Trash provider and file-by-file providers can't conflate semantics. UI
+  action menu unchanged; mapping happens in `execute.rs`.
