@@ -8,6 +8,7 @@ use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 pub mod android_sdk;
 pub mod dev_caches;
 pub mod docker;
+pub mod downloads_old;
 pub mod go_cache;
 pub mod gradle_maven;
 pub mod ios_simulators;
@@ -15,6 +16,7 @@ pub mod jetbrains;
 pub mod node_modules;
 pub mod python_caches;
 pub mod rust_targets;
+pub mod screenshots_old;
 pub mod trash;
 pub mod user_caches;
 pub mod user_logs;
@@ -60,6 +62,8 @@ pub fn category_family(category_id: &str) -> Family {
         "ios-simulators" | "android-sdk" => Family::Dev,
         "go-cache" | "docker" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
+        // UserStorage family
+        "downloads-old" | "screenshots-old" => Family::UserStorage,
         // System family
         "user-logs" | "user-caches" | "trash" => Family::System,
         other => panic!("unknown category id: {}", other),
@@ -116,6 +120,8 @@ pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>
         Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
         Box::new(go_cache::GoCache::new()),
         Box::new(docker::Docker::new()),
+        Box::new(downloads_old::DownloadsOld::new(opts.idle_days)),
+        Box::new(screenshots_old::ScreenshotsOld::new(opts.idle_days)),
         Box::new(trash::TrashProvider),
     ]
 }
@@ -142,6 +148,8 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "android-sdk",
         "go-cache",
         "docker",
+        "downloads-old",
+        "screenshots-old",
         "trash",
     ]
 }
