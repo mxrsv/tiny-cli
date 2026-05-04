@@ -6,6 +6,8 @@ use super::fs_safe::{dir_size_safe, remove_recursive_safe};
 use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 pub mod android_sdk;
+pub mod browser_caches;
+pub mod chat_caches;
 pub mod dev_caches;
 pub mod docker;
 pub mod downloads_old;
@@ -13,10 +15,12 @@ pub mod go_cache;
 pub mod gradle_maven;
 pub mod ios_simulators;
 pub mod jetbrains;
+pub mod mail_attachments;
 pub mod node_modules;
 pub mod python_caches;
 pub mod rust_targets;
 pub mod screenshots_old;
+pub mod streaming_caches;
 pub mod trash;
 pub mod user_caches;
 pub mod user_logs;
@@ -63,7 +67,8 @@ pub fn category_family(category_id: &str) -> Family {
         "go-cache" | "docker" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
         // UserStorage family
-        "downloads-old" | "screenshots-old" => Family::UserStorage,
+        "downloads-old" | "screenshots-old" | "mail-attachments" => Family::UserStorage,
+        "streaming-caches" | "chat-caches" | "browser-caches" => Family::UserStorage,
         // System family
         "user-logs" | "user-caches" | "trash" => Family::System,
         other => panic!("unknown category id: {}", other),
@@ -122,6 +127,10 @@ pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>
         Box::new(docker::Docker::new()),
         Box::new(downloads_old::DownloadsOld::new(opts.idle_days)),
         Box::new(screenshots_old::ScreenshotsOld::new(opts.idle_days)),
+        Box::new(mail_attachments::MailAttachments),
+        Box::new(streaming_caches::StreamingCaches::new()),
+        Box::new(chat_caches::ChatCaches::new()),
+        Box::new(browser_caches::BrowserCaches::new()),
         Box::new(trash::TrashProvider),
     ]
 }
@@ -150,6 +159,10 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "docker",
         "downloads-old",
         "screenshots-old",
+        "mail-attachments",
+        "streaming-caches",
+        "chat-caches",
+        "browser-caches",
         "trash",
     ]
 }
