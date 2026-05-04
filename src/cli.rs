@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser, Debug)]
@@ -39,6 +41,45 @@ pub struct ScanOpts {
     /// Report files older than this many days
     #[arg(long, default_value_t = 90)]
     pub older_than_days: u64,
+
+    /// Custom directory to scan. Repeatable. Overrides the default
+    /// Downloads/Desktop/Documents set when provided at least once.
+    #[arg(long, value_name = "DIR")]
+    pub path: Vec<PathBuf>,
+
+    /// Emit a machine-readable JSON report on stdout instead of text.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Maximum number of items to display per section (text mode).
+    #[arg(long, default_value_t = 20)]
+    pub limit: usize,
+
+    /// Sort order applied to file listings.
+    #[arg(long, value_enum, default_value_t = ScanSort::Size)]
+    pub sort: ScanSort,
+
+    /// Group duplicate files by (size + filename).
+    #[arg(long)]
+    pub duplicates: bool,
+
+    /// Verify duplicate groups by hashing file contents. Slower but accurate.
+    #[arg(long, requires = "duplicates")]
+    pub hash: bool,
+
+    /// Print a per-extension breakdown (count + total size).
+    #[arg(long)]
+    pub by_ext: bool,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScanSort {
+    /// Largest files first
+    Size,
+    /// Oldest files first
+    Age,
+    /// Lexicographic path order
+    Path,
 }
 
 #[derive(Args, Debug)]
