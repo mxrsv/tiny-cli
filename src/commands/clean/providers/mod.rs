@@ -6,6 +6,7 @@ use super::fs_safe::{dir_size_safe, remove_recursive_safe};
 use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 pub mod android_sdk;
+pub mod app_orphans;
 pub mod browser_caches;
 pub mod chat_caches;
 pub mod crash_reports;
@@ -24,6 +25,7 @@ pub mod quarantine;
 pub mod rust_targets;
 pub mod screenshots_old;
 pub mod streaming_caches;
+pub mod time_machine_local;
 pub mod trash;
 pub mod user_caches;
 pub mod user_logs;
@@ -75,6 +77,7 @@ pub fn category_family(category_id: &str) -> Family {
         // System family
         "user-logs" | "user-caches" | "trash" => Family::System,
         "quarantine" | "crash-reports" | "font-quicklook-caches" => Family::System,
+        "app-orphans" | "time-machine-local" => Family::System,
         other => panic!("unknown category id: {}", other),
     }
 }
@@ -137,6 +140,8 @@ pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>
         Box::new(browser_caches::BrowserCaches::new()),
         Box::new(quarantine::Quarantine),
         Box::new(crash_reports::CrashReports),
+        Box::new(app_orphans::AppOrphans::new()),
+        Box::new(time_machine_local::TimeMachineLocal::new()),
         Box::new(font_quicklook_caches::FontQuicklookCaches::new()),
         Box::new(trash::TrashProvider),
     ]
@@ -172,6 +177,8 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "browser-caches",
         "quarantine",
         "crash-reports",
+        "app-orphans",
+        "time-machine-local",
         "font-quicklook-caches",
         "trash",
     ]
