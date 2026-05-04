@@ -31,7 +31,7 @@ pub struct DiscoveryReport {
 /// Returns the providers selected by the CLI options. Filtering rules from
 /// the plan flag matrix.
 pub fn select_providers(opts: &CleanOpts) -> Vec<Box<dyn CleanProvider>> {
-    let all = all_providers();
+    let all = all_providers(opts);
     if !opts.category.is_empty() {
         return all
             .into_iter()
@@ -115,6 +115,8 @@ mod tests {
             category: Vec::new(),
             include_review: false,
             include_destructive: false,
+            review_paths: false,
+            idle_days: 30,
         }
     }
 

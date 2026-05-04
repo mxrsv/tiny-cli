@@ -151,6 +151,16 @@ pub struct CleanOpts {
     /// Show destructive categories such as Trash in the picker (unchecked).
     #[arg(long)]
     pub include_destructive: bool,
+
+    /// Open a per-path drill-down stage after picking categories. Lets you
+    /// uncheck specific paths before execute. Conflicts with --yes.
+    #[arg(long, conflicts_with = "yes")]
+    pub review_paths: bool,
+
+    /// Idle threshold (in days) for providers that filter by mtime
+    /// (node_modules, rust target/, downloads_old, ...). Must be > 0.
+    #[arg(long, default_value_t = 30)]
+    pub idle_days: u64,
 }
 
 #[derive(Args, Debug)]

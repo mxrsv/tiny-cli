@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::path::PathBuf;
+
 use anyhow::Result;
 
 use crate::cli::CleanOpts;
@@ -8,12 +11,14 @@ mod discover;
 mod execute;
 pub mod fs_safe;
 mod picker;
+mod picker_drill;
 mod process;
 pub mod providers;
 mod report;
 mod types;
 
 use discover::CategoryGroup;
+use picker::ActionChoice;
 use types::CleanAction;
 
 pub fn run(opts: CleanOpts) -> Result<()> {
@@ -41,7 +46,7 @@ pub fn run(opts: CleanOpts) -> Result<()> {
         // -y + --category: skip picker entirely, plan = the named categories.
         discovery.groups.iter().collect()
     } else {
-        let indices = picker::pick_categories(&discovery.groups)?;
+        let indices = picker::pick_categories_grouped(&discovery.groups)?;
         if indices.is_empty() {
             println!("No categories selected.");
             return Ok(());
@@ -51,7 +56,20 @@ pub fn run(opts: CleanOpts) -> Result<()> {
 
     report::print_plan(&selected);
 
-    let action = decide_action(&opts, &selected)?;
+    // Stage 2: optional drill-down. Triggered by --review-paths upfront,
+    // or by the `Review paths` action menu entry mid-flow.
+    let mut excluded_paths: HashSet<PathBuf> = HashSet::new();
+    let mut already_drilled = false;
+    if opts.review_paths && !opts.yes {
+        excluded_paths = picker::drill_down(&selected)?;
+        already_drilled = true;
+        if !excluded_paths.is_empty() {
+            println!();
+            println!("({} path(s) excluded by review)", excluded_paths.len());
+        }
+    }
+
+    let action = decide_action(&opts, &selected, &mut excluded_paths, &mut already_drilled)?;
     match action {
         CleanAction::DryRun => {
             println!();
@@ -63,14 +81,19 @@ pub fn run(opts: CleanOpts) -> Result<()> {
             Ok(())
         }
         CleanAction::Trash | CleanAction::HardDelete => {
-            let report = execute::execute(&selected, action)?;
+            let report = execute::execute(&selected, action, &excluded_paths, &opts)?;
             print_exec_report(&report);
             Ok(())
         }
     }
 }
 
-fn decide_action(opts: &CleanOpts, selected: &[&CategoryGroup]) -> Result<CleanAction> {
+fn decide_action(
+    opts: &CleanOpts,
+    selected: &[&CategoryGroup],
+    excluded_paths: &mut HashSet<PathBuf>,
+    already_drilled: &mut bool,
+) -> Result<CleanAction> {
     if opts.yes {
         // Validation already enforced --hard + TINY_CONFIRM_HARD=1 if --hard.
         return Ok(if opts.hard {
@@ -80,15 +103,33 @@ fn decide_action(opts: &CleanOpts, selected: &[&CategoryGroup]) -> Result<CleanA
         });
     }
     let prefer_hard = opts.hard;
-    let action = picker::pick_action(prefer_hard)?;
-    if matches!(action, CleanAction::HardDelete) {
-        let total: u64 = selected.iter().map(|g| g.total_size).sum();
-        let count: usize = selected.iter().map(|g| g.items.len()).sum();
-        if !picker::confirm_hard_delete(count, total)? {
-            return Ok(CleanAction::Cancel);
+    loop {
+        let offer_review = !*already_drilled;
+        let choice = picker::pick_action_with_review(prefer_hard, offer_review)?;
+        let action = match choice {
+            ActionChoice::Trash => CleanAction::Trash,
+            ActionChoice::HardDelete => CleanAction::HardDelete,
+            ActionChoice::DryRun => CleanAction::DryRun,
+            ActionChoice::Cancel => CleanAction::Cancel,
+            ActionChoice::ReviewPaths => {
+                *excluded_paths = picker::drill_down(selected)?;
+                *already_drilled = true;
+                if !excluded_paths.is_empty() {
+                    println!();
+                    println!("({} path(s) excluded by review)", excluded_paths.len());
+                }
+                continue;
+            }
+        };
+        if matches!(action, CleanAction::HardDelete) {
+            let total: u64 = selected.iter().map(|g| g.total_size).sum();
+            let count: usize = selected.iter().map(|g| g.items.len()).sum();
+            if !picker::confirm_hard_delete(count, total)? {
+                return Ok(CleanAction::Cancel);
+            }
         }
+        return Ok(action);
     }
-    Ok(action)
 }
 
 fn print_exec_report(report: &types::ExecReport) {

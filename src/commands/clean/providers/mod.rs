@@ -11,6 +11,47 @@ pub mod user_caches;
 pub mod user_logs;
 pub mod xcode;
 
+/// Top-level grouping for the hierarchical picker. Source of truth lives in
+/// `category_family()` below — providers must not declare their own family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    Dev,
+    UserStorage,
+    System,
+}
+
+impl Family {
+    #[allow(dead_code)]
+    pub fn id(&self) -> &'static str {
+        match self {
+            Family::Dev => "dev",
+            Family::UserStorage => "user-storage",
+            Family::System => "system",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Family::Dev => "Dev caches",
+            Family::UserStorage => "User storage",
+            Family::System => "System leftovers",
+        }
+    }
+}
+
+/// Maps a category id to its family. Panics on unknown id — every id in
+/// `known_category_ids()` MUST be covered (verified by test below).
+pub fn category_family(category_id: &str) -> Family {
+    match category_id {
+        // Dev family
+        "cargo" | "npm" | "pnpm" | "yarn" => Family::Dev,
+        "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
+        // System family
+        "user-logs" | "user-caches" | "trash" => Family::System,
+        other => panic!("unknown category id: {}", other),
+    }
+}
+
 pub trait CleanProvider {
     fn id(&self) -> &'static str;
     fn label(&self) -> &'static str;
@@ -36,7 +77,11 @@ pub trait CleanProvider {
 
 /// Returns every provider in canonical id order. Filtering by risk level,
 /// `--category`, and runtime availability happens in `discover.rs`.
-pub fn all_providers() -> Vec<Box<dyn CleanProvider>> {
+///
+/// Takes `&CleanOpts` so providers needing tunables (idle_days, search
+/// roots, ...) can read them at construction. M0 providers don't yet, but
+/// the param exists so M1+ can land without re-threading callers.
+pub fn all_providers(_opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>> {
     vec![
         Box::new(user_logs::UserLogs),
         Box::new(xcode::XcodeDerivedData),
@@ -164,4 +209,33 @@ pub(crate) fn move_to_trash(path: &Path) -> Result<()> {
         return Err(anyhow!("osascript failed for {}: {}", path.display(), err));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_known_category_has_family() {
+        for id in known_category_ids() {
+            // Must not panic. Result discarded; coverage is what we test.
+            let _ = category_family(id);
+        }
+    }
+
+    #[test]
+    fn family_id_and_label_stable() {
+        assert_eq!(Family::Dev.id(), "dev");
+        assert_eq!(Family::UserStorage.id(), "user-storage");
+        assert_eq!(Family::System.id(), "system");
+        assert_eq!(Family::Dev.label(), "Dev caches");
+        assert_eq!(Family::UserStorage.label(), "User storage");
+        assert_eq!(Family::System.label(), "System leftovers");
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown category id")]
+    fn category_family_panics_on_unknown() {
+        let _ = category_family("definitely-not-a-category");
+    }
 }

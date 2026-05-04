@@ -39,6 +39,11 @@ pub fn validate_with_env(opts: &CleanOpts, confirm_hard_env: bool) -> Result<()>
         return Err(anyhow!("--yes requires --category to specify scope"));
     }
 
+    // --idle-days 0 is meaningless (would flag everything as idle).
+    if opts.idle_days == 0 {
+        return Err(anyhow!("--idle-days must be > 0"));
+    }
+
     // --hard -y without TINY_CONFIRM_HARD=1 is refused. The interactive
     // path (no -y) handles confirm via Y/n prompt at action time.
     if opts.hard && opts.yes && !confirm_hard_env {
@@ -63,6 +68,8 @@ mod tests {
             category: Vec::new(),
             include_review: false,
             include_destructive: false,
+            review_paths: false,
+            idle_days: 30,
         }
     }
 
@@ -133,6 +140,14 @@ mod tests {
         o.include_destructive = true;
         o.category = vec!["trash".into()];
         validate_with_env(&o, true).unwrap();
+    }
+
+    #[test]
+    fn idle_days_zero_fails() {
+        let mut o = opts();
+        o.idle_days = 0;
+        let err = validate_with_env(&o, false).unwrap_err().to_string();
+        assert!(err.contains("--idle-days"));
     }
 
     #[test]
