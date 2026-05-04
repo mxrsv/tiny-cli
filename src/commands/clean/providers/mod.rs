@@ -6,9 +6,12 @@ use super::fs_safe::{dir_size_safe, remove_recursive_safe};
 use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 pub mod dev_caches;
+pub mod gradle_maven;
+pub mod jetbrains;
 pub mod trash;
 pub mod user_caches;
 pub mod user_logs;
+pub mod vscode;
 pub mod xcode;
 
 /// Top-level grouping for the hierarchical picker. Source of truth lives in
@@ -45,6 +48,7 @@ pub fn category_family(category_id: &str) -> Family {
     match category_id {
         // Dev family
         "cargo" | "npm" | "pnpm" | "yarn" => Family::Dev,
+        "gradle-maven" | "jetbrains" | "vscode" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
         // System family
         "user-logs" | "user-caches" | "trash" => Family::System,
@@ -92,6 +96,9 @@ pub fn all_providers(_opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider
         Box::new(dev_caches::NpmCache),
         Box::new(dev_caches::PnpmStore),
         Box::new(dev_caches::YarnCache),
+        Box::new(gradle_maven::GradleMaven),
+        Box::new(jetbrains::JetBrains),
+        Box::new(vscode::VsCode),
         Box::new(trash::TrashProvider),
     ]
 }
@@ -108,6 +115,9 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "npm",
         "pnpm",
         "yarn",
+        "gradle-maven",
+        "jetbrains",
+        "vscode",
         "trash",
     ]
 }
