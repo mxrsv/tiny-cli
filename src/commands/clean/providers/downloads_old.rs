@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::{execute_per_item, is_idle, CleanProvider};
-use crate::commands::clean::fs_safe::dir_size_safe;
+use crate::commands::clean::fs_safe::{dir_size_safe, is_dir_safe};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "downloads-old";
@@ -34,7 +34,7 @@ impl CleanProvider for DownloadsOld {
         RiskLevel::Review
     }
     fn available(&self) -> bool {
-        home().map(|h| h.join("Downloads").is_dir()).unwrap_or(false)
+        home().map(|h| is_dir_safe(&h.join("Downloads"))).unwrap_or(false)
     }
     fn discover(&self) -> Result<Vec<CleanItem>> {
         let h = match home() {

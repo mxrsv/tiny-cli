@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
+use crate::commands::clean::fs_safe::is_dir_safe;
 use crate::commands::clean::process::{PgrepChecker, ProcessChecker};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -74,7 +75,7 @@ impl CleanProvider for BrowserCaches {
         let mut items = Vec::new();
         for (rel, app) in BROWSER_CACHE_PATHS {
             let path = h.join(rel);
-            if !path.is_dir() {
+            if !is_dir_safe(&path) {
                 continue;
             }
             if self.checker.is_running(app) {
@@ -116,11 +117,11 @@ pub fn firefox_cache_dirs(profiles_root: &std::path::Path) -> Vec<PathBuf> {
     };
     for entry in entries.flatten() {
         let p = entry.path();
-        if !p.is_dir() {
+        if !is_dir_safe(&p) {
             continue;
         }
         let cache2 = p.join("cache2");
-        if cache2.is_dir() {
+        if is_dir_safe(&cache2) {
             out.push(cache2);
         }
     }

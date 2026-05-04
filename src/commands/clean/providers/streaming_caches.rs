@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
+use crate::commands::clean::fs_safe::is_dir_safe;
 use crate::commands::clean::process::{PgrepChecker, ProcessChecker};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -72,7 +73,7 @@ impl CleanProvider for StreamingCaches {
         let mut items = Vec::new();
         for (rel, app) in STREAMING_PATHS {
             let path = h.join(rel);
-            if !path.is_dir() {
+            if !is_dir_safe(&path) {
                 continue;
             }
             if self.checker.is_running(app) {

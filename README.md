@@ -58,9 +58,9 @@ tiny clean --category trash --hard      # the only sanctioned way to empty Trash
 TINY_CONFIRM_HARD=1 tiny clean --category cargo --hard -y   # non-interactive permanent delete
 ```
 
-Categories are grouped into three families in the picker:
+Categories are grouped into three families in the picker (31 total):
 
-**Dev caches (15)** — `cargo`, `npm`, `pnpm`, `yarn`, `node-modules`,
+**Dev caches (17)** — `cargo`, `npm`, `pnpm`, `yarn`, `node-modules`,
 `python-caches`, `rust-targets`, `gradle-maven`, `jetbrains`, `vscode`,
 `ios-simulators`, `android-sdk`, `go-cache`, `docker`, `xcode-derived`,
 `xcode-archives`, `xcode-devicesupport`.

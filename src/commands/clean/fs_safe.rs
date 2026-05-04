@@ -101,6 +101,15 @@ where
     }
 }
 
+/// True iff `path` is a real directory (not a symlink). Replacement for
+/// `Path::is_dir()` which silently follows symlinks — providers must never
+/// trust a symlinked target.
+pub fn is_dir_safe(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_dir())
+        .unwrap_or(false)
+}
+
 /// Sums the byte length of every file under `root`, never following symlinks.
 /// Returns 0 if `root` does not exist.
 pub fn dir_size_safe(root: &Path) -> u64 {

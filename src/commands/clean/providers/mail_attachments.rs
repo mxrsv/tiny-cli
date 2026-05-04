@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 
 use super::{execute_per_item, top_level_entries, CleanProvider};
+use crate::commands::clean::fs_safe::is_dir_safe;
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "mail-attachments";
@@ -29,7 +30,7 @@ impl CleanProvider for MailAttachments {
         Some(APP)
     }
     fn available(&self) -> bool {
-        home().map(|h| h.join("Library/Mail").is_dir()).unwrap_or(false)
+        home().map(|h| is_dir_safe(&h.join("Library/Mail"))).unwrap_or(false)
     }
     fn discover(&self) -> Result<Vec<CleanItem>> {
         let h = match home() {

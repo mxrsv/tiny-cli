@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::{execute_per_item, is_idle, CleanProvider};
-use crate::commands::clean::fs_safe::dir_size_safe;
+use crate::commands::clean::fs_safe::{dir_size_safe, is_dir_safe};
 use crate::commands::clean::runner::{CommandRunner, RealRunner};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -41,13 +41,13 @@ impl ScreenshotsOld {
             let trimmed = out.stdout.trim();
             if !trimmed.is_empty() {
                 let p = PathBuf::from(expand_tilde(trimmed));
-                if p.is_dir() {
+                if is_dir_safe(&p) {
                     return Some(p);
                 }
             }
         }
         // Fallback: ~/Desktop (macOS default).
-        home().map(|h| h.join("Desktop")).filter(|p| p.is_dir())
+        home().map(|h| h.join("Desktop")).filter(|p| is_dir_safe(p))
     }
 }
 
