@@ -15,6 +15,7 @@ mod picker_drill;
 mod process;
 pub mod providers;
 mod report;
+mod runner;
 mod types;
 
 use discover::CategoryGroup;
