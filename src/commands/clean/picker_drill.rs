@@ -47,16 +47,30 @@ fn drill_flat(group: &CategoryGroup, excluded: &mut HashSet<PathBuf>) -> Result<
         .collect();
     let defaults: Vec<bool> = vec![true; group.items.len()];
     let prompt = format!(
-        "[{}] keep checked to delete, uncheck to skip ({} items)",
+        "[{}] keep checked to delete, uncheck to skip ({} items) — Esc to skip group",
         group.label,
         group.items.len()
     );
-    let kept = MultiSelect::with_theme(&ColorfulTheme::default())
+    // interact_opt: Some(...) on Enter, None on Esc/Ctrl+C. We treat Esc
+    // as "skip this group, keep every path checked, move on" so user
+    // doesn't lose exclusions made on previous groups.
+    let kept = match MultiSelect::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt)
         .items(&labels)
         .defaults(&defaults)
-        .interact()
-        .context("drill-down (flat) failed")?;
+        .interact_opt()
+        .context("drill-down (flat) failed")?
+    {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "  ↳ skipped drill-down for [{}], all {} items kept in plan",
+                group.label,
+                group.items.len()
+            );
+            return Ok(());
+        }
+    };
     let kept_set: HashSet<usize> = kept.into_iter().collect();
     for (idx, item) in group.items.iter().enumerate() {
         if !kept_set.contains(&idx) {
@@ -85,17 +99,28 @@ fn drill_summary(group: &CategoryGroup, excluded: &mut HashSet<PathBuf>) -> Resu
         .collect();
     let defaults: Vec<bool> = vec![true; buckets.len()];
     let prompt = format!(
-        "[{}] {} items > {} — grouped by parent dir",
+        "[{}] {} items > {} — grouped by parent dir — Esc to skip group",
         group.label,
         group.items.len(),
         DRILL_DOWN_FLAT_LIMIT
     );
-    let kept = MultiSelect::with_theme(&ColorfulTheme::default())
+    let kept = match MultiSelect::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt)
         .items(&labels)
         .defaults(&defaults)
-        .interact()
-        .context("drill-down (summary) failed")?;
+        .interact_opt()
+        .context("drill-down (summary) failed")?
+    {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "  ↳ skipped drill-down for [{}], all {} items kept in plan",
+                group.label,
+                group.items.len()
+            );
+            return Ok(());
+        }
+    };
     let kept_set: HashSet<usize> = kept.into_iter().collect();
     for (bucket_idx, (_, indices)) in buckets.iter().enumerate() {
         if !kept_set.contains(&bucket_idx) {
