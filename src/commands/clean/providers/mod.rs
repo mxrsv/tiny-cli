@@ -5,8 +5,10 @@ use std::process::Command;
 use super::fs_safe::{dir_size_safe, remove_recursive_safe};
 use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
+pub mod android_sdk;
 pub mod dev_caches;
 pub mod gradle_maven;
+pub mod ios_simulators;
 pub mod jetbrains;
 pub mod node_modules;
 pub mod python_caches;
@@ -53,6 +55,7 @@ pub fn category_family(category_id: &str) -> Family {
         "cargo" | "npm" | "pnpm" | "yarn" => Family::Dev,
         "node-modules" | "python-caches" | "rust-targets" => Family::Dev,
         "gradle-maven" | "jetbrains" | "vscode" => Family::Dev,
+        "ios-simulators" | "android-sdk" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
         // System family
         "user-logs" | "user-caches" | "trash" => Family::System,
@@ -106,6 +109,8 @@ pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>
         Box::new(gradle_maven::GradleMaven),
         Box::new(jetbrains::JetBrains),
         Box::new(vscode::VsCode),
+        Box::new(ios_simulators::IosSimulators),
+        Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
         Box::new(trash::TrashProvider),
     ]
 }
@@ -128,6 +133,8 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "gradle-maven",
         "jetbrains",
         "vscode",
+        "ios-simulators",
+        "android-sdk",
         "trash",
     ]
 }
