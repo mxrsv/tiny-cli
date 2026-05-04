@@ -48,6 +48,59 @@ fn walk_inner(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Walks `root` symlink-safe, calling `visit` for every directory entry.
+/// `visit` returns whether to descend into that directory (ignored for
+/// non-dir entries). The walker silently skips entries whose metadata
+/// cannot be read.
+///
+/// Used by providers that need conditional descent (e.g. node_modules: stop
+/// recursing once a `node_modules` dir is found, so we don't flag nested
+/// transitive `node_modules`).
+pub fn walk_with<F>(root: &Path, mut visit: F)
+where
+    F: FnMut(&Path, &fs::Metadata) -> bool,
+{
+    let meta = match fs::symlink_metadata(root) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if meta.file_type().is_symlink() {
+        return;
+    }
+    if !meta.file_type().is_dir() {
+        return;
+    }
+    let descend_root = visit(root, &meta);
+    if descend_root {
+        walk_with_inner(root, &mut visit);
+    }
+}
+
+fn walk_with_inner<F>(dir: &Path, visit: &mut F)
+where
+    F: FnMut(&Path, &fs::Metadata) -> bool,
+{
+    let entries = match fs::read_dir(dir) {
+        Ok(it) => it,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let meta = match fs::symlink_metadata(&path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let ft = meta.file_type();
+        if ft.is_symlink() {
+            continue;
+        }
+        let descend = visit(&path, &meta);
+        if ft.is_dir() && descend {
+            walk_with_inner(&path, visit);
+        }
+    }
+}
+
 /// Sums the byte length of every file under `root`, never following symlinks.
 /// Returns 0 if `root` does not exist.
 pub fn dir_size_safe(root: &Path) -> u64 {

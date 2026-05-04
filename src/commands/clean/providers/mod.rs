@@ -8,6 +8,9 @@ use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 pub mod dev_caches;
 pub mod gradle_maven;
 pub mod jetbrains;
+pub mod node_modules;
+pub mod python_caches;
+pub mod rust_targets;
 pub mod trash;
 pub mod user_caches;
 pub mod user_logs;
@@ -48,6 +51,7 @@ pub fn category_family(category_id: &str) -> Family {
     match category_id {
         // Dev family
         "cargo" | "npm" | "pnpm" | "yarn" => Family::Dev,
+        "node-modules" | "python-caches" | "rust-targets" => Family::Dev,
         "gradle-maven" | "jetbrains" | "vscode" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
         // System family
@@ -85,7 +89,7 @@ pub trait CleanProvider {
 /// Takes `&CleanOpts` so providers needing tunables (idle_days, search
 /// roots, ...) can read them at construction. M0 providers don't yet, but
 /// the param exists so M1+ can land without re-threading callers.
-pub fn all_providers(_opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>> {
+pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>> {
     vec![
         Box::new(user_logs::UserLogs),
         Box::new(xcode::XcodeDerivedData),
@@ -96,6 +100,9 @@ pub fn all_providers(_opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider
         Box::new(dev_caches::NpmCache),
         Box::new(dev_caches::PnpmStore),
         Box::new(dev_caches::YarnCache),
+        Box::new(node_modules::NodeModules::new(opts.idle_days)),
+        Box::new(python_caches::PythonCaches::new(opts.idle_days)),
+        Box::new(rust_targets::RustTargets::new(opts.idle_days)),
         Box::new(gradle_maven::GradleMaven),
         Box::new(jetbrains::JetBrains),
         Box::new(vscode::VsCode),
@@ -115,11 +122,49 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "npm",
         "pnpm",
         "yarn",
+        "node-modules",
+        "python-caches",
+        "rust-targets",
         "gradle-maven",
         "jetbrains",
         "vscode",
         "trash",
     ]
+}
+
+/// Canonical set of dev project roots scanned by walking providers
+/// (`node_modules`, `rust_targets`, `python_caches`). Only roots that exist
+/// are returned. Order is stable so test discovery is deterministic.
+pub(crate) fn dev_search_roots() -> Vec<std::path::PathBuf> {
+    let h = match std::env::var_os("HOME") {
+        Some(h) => std::path::PathBuf::from(h),
+        None => return Vec::new(),
+    };
+    const ROOTS: &[&str] = &["Documents", "Projects", "Code", "Developer", "Workspace"];
+    ROOTS
+        .iter()
+        .map(|r| h.join(r))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// True iff `manifest_path` exists and was modified more than `idle_days`
+/// days ago. Treats unreadable mtime as "not idle" (conservative — won't
+/// flag a project we can't measure).
+pub(crate) fn is_idle(manifest_path: &std::path::Path, idle_days: u64) -> bool {
+    let meta = match std::fs::symlink_metadata(manifest_path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    let mtime = match meta.modified() {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let elapsed = match std::time::SystemTime::now().duration_since(mtime) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    elapsed.as_secs() > idle_days * 86_400
 }
 
 /// Lists immediate children of `root` as `CleanItem`s, sized via the
