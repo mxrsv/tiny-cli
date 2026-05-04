@@ -122,11 +122,11 @@ fn confirm_hard_delete(plans: &[Plan]) -> Result<bool> {
         plural(plans.iter().map(|p| p.items.len()).sum::<usize>(), "item"),
         format_bytes(total)
     );
-    Ok(Confirm::with_theme(&ColorfulTheme::default())
+    Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt)
         .default(false)
         .interact()
-        .context("hard-delete confirm prompt failed")?)
+        .context("hard-delete confirm prompt failed")
 }
 
 fn plural(n: usize, label: &str) -> String {
@@ -295,7 +295,7 @@ fn parse_mdls_days_ago(raw: &str) -> Option<u64> {
 }
 
 fn days_from_civil(y: i64, m: i64, d: i64) -> Option<i64> {
-    if m < 1 || m > 12 || d < 1 || d > 31 {
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return None;
     }
     let y = if m <= 2 { y - 1 } else { y };
@@ -359,7 +359,7 @@ fn pick_interactive(opts: &UninstallOpts) -> Result<Vec<AppEntry>> {
         .iter()
         .map(|a| {
             let last_used = match a.last_used_days {
-                Some(d) if d == 0 => "today".to_string(),
+                Some(0) => "today".to_string(),
                 Some(d) => format!("{}d ago", d),
                 None => "never".to_string(),
             };
