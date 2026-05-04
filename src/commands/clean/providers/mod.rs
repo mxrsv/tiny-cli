@@ -8,9 +8,11 @@ use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 pub mod android_sdk;
 pub mod browser_caches;
 pub mod chat_caches;
+pub mod crash_reports;
 pub mod dev_caches;
 pub mod docker;
 pub mod downloads_old;
+pub mod font_quicklook_caches;
 pub mod go_cache;
 pub mod gradle_maven;
 pub mod ios_simulators;
@@ -18,6 +20,7 @@ pub mod jetbrains;
 pub mod mail_attachments;
 pub mod node_modules;
 pub mod python_caches;
+pub mod quarantine;
 pub mod rust_targets;
 pub mod screenshots_old;
 pub mod streaming_caches;
@@ -71,6 +74,7 @@ pub fn category_family(category_id: &str) -> Family {
         "streaming-caches" | "chat-caches" | "browser-caches" => Family::UserStorage,
         // System family
         "user-logs" | "user-caches" | "trash" => Family::System,
+        "quarantine" | "crash-reports" | "font-quicklook-caches" => Family::System,
         other => panic!("unknown category id: {}", other),
     }
 }
@@ -131,6 +135,9 @@ pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>
         Box::new(streaming_caches::StreamingCaches::new()),
         Box::new(chat_caches::ChatCaches::new()),
         Box::new(browser_caches::BrowserCaches::new()),
+        Box::new(quarantine::Quarantine),
+        Box::new(crash_reports::CrashReports),
+        Box::new(font_quicklook_caches::FontQuicklookCaches::new()),
         Box::new(trash::TrashProvider),
     ]
 }
@@ -163,6 +170,9 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "streaming-caches",
         "chat-caches",
         "browser-caches",
+        "quarantine",
+        "crash-reports",
+        "font-quicklook-caches",
         "trash",
     ]
 }
