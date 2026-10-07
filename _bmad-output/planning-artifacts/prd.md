@@ -164,6 +164,10 @@ CLI and the app. Older stack descriptions elsewhere in this broader record are
 historical design references. The desktop has two
 primary destinations: Processes and Clean. Exact layout and styling require
 an interactive demo and user visual acceptance before production integration.
+On 2026-10-07 the user deferred showing equivalent `tiny ...` commands in the
+GUI for this MVP. FR39, the "Equivalent CLI" footer and the CLI-literacy metric
+are deferred, not removed. The shared core remains the CLI/GUI parity mechanism,
+and processes gain an additive `tiny processes` CLI command for PC-P5.
 
 #### Processes acceptance criteria
 
@@ -221,7 +225,8 @@ an interactive demo and user visual acceptance before production integration.
 Smart Scan/Health Score, Space Lens, app-managed quarantine and Cmd+Z undo,
 GUI uninstall/startup management, menubar monitoring, scheduled or automatic
 cleanup, forecasting, focus integration, maintenance/protection, supervised
-process restart, multi-platform support, and public distribution automation.
+process restart, multi-platform support, public distribution automation, and
+the GUI "Equivalent CLI" footer/copy (FR39, FR40; deferred 2026-10-07).
 The existing CLI capabilities remain available. Future work must explicitly
 reactivate the relevant requirements; old phase tags do not expand this MVP.
 
@@ -343,7 +348,7 @@ Bảng map từ journey → capability cần build:
 | Preview file thật trước khi xoá (size/path/age)                               | A                             | MVP                                    |
 | Hybrid delete: quarantine 30 ngày + Trash macOS option                        | A, C                          | MVP                                    |
 | Undo Cmd+Z + "Lịch sử dọn dẹp" panel                                          | A (mention), C (load-bearing) | MVP                                    |
-| Phô CLI footer "Equivalent CLI" + Copy                                        | A, B                          | MVP                                    |
+| Phô CLI footer "Equivalent CLI" + Copy                                        | A, B                          | Deferred 2026-10-07 (was MVP)          |
 | CLI parity 100% (mọi GUI action có CLI tương đương)                           | B                             | MVP (architecture invariant)           |
 | JSON output cho mọi command                                                   | B                             | MVP (`scan --json` đã có, cần mở rộng) |
 | Confirmation dialog cho destructive action                                    | C                             | MVP                                    |
@@ -806,8 +811,8 @@ Mục tiêu: Mở khoá insight "explain causes" thật sự — treemap + heat-
 ### CLI Parity & Transparency
 
 - **FR38**: Every action available in the GUI has an equivalent `tiny ...` CLI command that produces the same effect when run independently. `[P1, architectural invariant]`
-- **FR39**: Every GUI action displays its equivalent CLI command in a footer/info area with a one-click "Copy" button. `[P1]`
-- **FR40**: User can toggle the CLI footer visibility in app settings (default ON for desktop app; per-user override). `[P1]`
+- **FR39**: Every GUI action displays its equivalent CLI command in a footer/info area with a one-click "Copy" button. `[P1]` *(Deferred from the MVP on 2026-10-07.)*
+- **FR40**: User can toggle the CLI footer visibility in app settings (default ON for desktop app; per-user override). `[P1]` *(Deferred with FR39 on 2026-10-07.)*
 - **FR41**: All CLI commands support `--json` output, returning the same data structure the GUI consumes via Tauri commands. `[P1]`
 - **FR42**: All long-running CLI commands support a progress callback that emits structured updates (percent + current item), consumed by GUI via Tauri events. `[P1]`
 

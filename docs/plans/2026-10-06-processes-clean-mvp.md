@@ -2,8 +2,8 @@
 
 Record: Active task plan
 Started: 2026-10-06
-Documentation checkout: `/Users/kyantran/Documents/Development/Personal/tiny-cli` (`main`, `3c7e8a4`)
-Implementation source checkout: `/Users/kyantran/.codex/worktrees/tiny-pr-1/tiny-cli` (detached HEAD, `fb07b4441b261543754ba2f4f4099a69a5f39e0d`, PR #1)
+Documentation checkout: `/Users/kyantran/Documents/Development/Personal/tiny-cli` (`main`)
+Implementation checkout: `/Users/kyantran/.codex/worktrees/tiny-pr-1/tiny-cli`, branch `feat/native-desktop` created on 2026-10-07 from PR #1 commit `fb07b4441b261543754ba2f4f4099a69a5f39e0d`
 
 ## Requirements reference and delivery scope
 
@@ -24,9 +24,12 @@ reference until the native app is accepted; do not delete it in the demo slice.
 Existing SQLite/quarantine data is outside this migration's mutation scope.
 
 Build a sample-only SwiftUI `.app` first in the approved dark bento-grid style
-recorded in the boundary spec. Tiles, rings, sparklines and the command dock use
+recorded in the boundary spec. Tiles, rings, sparklines and the navigation dock use
 SwiftUI/AppKit only; no third-party UI library. No real process/file action
 occurs before the user accepts the rendered design and flows.
+
+The GUI shows no equivalent `tiny ...` command in this MVP (user decision,
+2026-10-07); no command-string builder is planned.
 
 For production, propose `macos/Package.swift`, `macos/Sources/Tiny/` for the app,
 and `macos/Sources/TinyEngine/` for the generated bindings plus a thin Swift
@@ -43,8 +46,9 @@ object retains trusted previews in memory; Swift sees only generated adapter
 types. Keep work off the main actor, hop progress callbacks to the main actor,
 and gate overlapping operations in the session object. Cancellation is
 cooperative, including checks before individual mutations; never blindly replay
-a cleanup after a failure. Native FDA behavior for the bundled app is a required
-check, not an assumed fix from SwiftUI.
+a cleanup after a failure. Native FDA and Finder Automation behavior for the bundled
+app are required checks, not assumed fixes from SwiftUI. Development bundles use
+bundle ID `com.mxrsv.tiny.dev`.
 
 Reuse Rust process/safety primitives where verified. Revalidate process identity
 and cleanup path/provider/running-app boundaries at mutation time. Keep Trash-only
@@ -54,17 +58,19 @@ reference for guards, not a reason to import SQLite/quarantine into this MVP.
 ## Execution environment
 
 The earlier user request for Codex Cloud development remains historical context;
-this conversation approved and ran PR #1 locally and now chooses a native demo.
-No cloud dispatch, new branch, commit, push, merge, release, or replacement of the
-installed `/Applications/Tiny.app` is part of this planning/demo slice. Keep
-native tests on this Mac; a cloud/Linux check cannot establish FDA, Trash, ports,
-app lifecycle, keyboard behavior, or visual acceptance.
+this work runs locally. Documentation commits land on `main` in the primary
+checkout. T3–T6 code commits land on `feat/native-desktop` in the PR worktree
+(conventional commits, one per completed slice, `git commit -- <paths>`). No
+cloud dispatch, push, merge, release, or replacement of the installed
+`/Applications/Tiny.app` is authorized yet. Keep native tests on this Mac; a
+cloud/Linux check cannot establish FDA, Automation, Trash, ports, app
+lifecycle, keyboard behavior, or visual acceptance.
 
 The primary checkout contains pre-existing dirty planning files. Update their
 owning scope pointers selectively, preserve unrelated changes and `error.log`,
 and do not copy the whole dirty primary checkout into the PR worktree. The PR
-worktree also contains the local `Cargo.lock` compatibility adjustment from the
-native run. No core extraction task is marked accepted solely from inspection.
+worktree also contains an uncommitted local `Cargo.lock` adjustment from the
+native run; T3a folds it into the first lock update and commits it. No core extraction task is marked accepted solely from inspection.
 
 ## Tasks
 
@@ -92,8 +98,8 @@ native run. No core extraction task is marked accepted solely from inspection.
   - 2026-10-07: the default-control sidebar/inspector/focus comparison was
     rejected as generic; the demo was rebuilt in the approved bento-grid style.
   - Validate search/sort, keyboard row selection, details, separate
-    quit/force-quit dialogs, cleanup tile selection/preview/cancel, the command
-    dock, and stale/unavailable states.
+    quit/force-quit dialogs, cleanup tile selection/preview/cancel, the
+    navigation dock (no CLI command display, 2026-10-07), and stale/unavailable states.
   - Verify: `swiftc -parse-as-library -swift-version 6 -target arm64-apple-macosx14.0 TinyPreview.swift -o tiny-preview`,
     `./tiny-preview --snapshot <scratch-dir>` (in-process render, no Screen
     Recording access), bundle signature verification, launch evidence, and user
@@ -103,65 +109,180 @@ native run. No core extraction task is marked accepted solely from inspection.
   - No Computer Use/screen capture without current-task authorization.
     Covers B6 and the interaction-design portion of PC-D2/PC-D3.
 
-- [ ] **T3: Add the FFI adapter and process domain**
-  - Depends on T1 and the concrete boundary/structure approach presented here.
-  - Existing files: root `Cargo.toml` workspace members, `crates/tiny-core/src/lib.rs`.
+- [ ] **T3: Add the FFI adapter, process domain and `tiny processes` CLI**
+  - Depends on T1. Branch `feat/native-desktop`.
+  - Existing files: root `Cargo.toml` (`members`, `default-members`), `Cargo.lock`,
+    `crates/tiny-core/{Cargo.toml,src/lib.rs}`, `crates/tiny-core/src/clean/runner.rs`,
+    `crates/tiny/src/{cli.rs,main.rs}`, `crates/tiny/src/render/`, `crates/tiny/tests/`.
   - New files: `crates/tiny-ffi/{Cargo.toml,src/lib.rs,src/session.rs,src/processes.rs,
-    src/bin/uniffi-bindgen.rs}`,
-    `crates/tiny-core/src/processes/{mod.rs,snapshot.rs,actions.rs}` and focused
-    adjacent/CLI tests. Attach every new module to the existing entry points.
-    UniFFI 0.32 needs `rustc` ≥ 1.91; the local toolchain is 1.99.0 since
-    2026-10-07, so no `cargo-platform` pin is needed.
-  - **T3a — adapter first:** implement the session object, typed errors, the
-    cancellation token, progress callback trait and the operation gate. Verify
-    with Rust tests calling the exported functions: typed errors, unwinding
-    panic as failure (`panic = "unwind"` kept), overlap rejection and
-    cancellation, before exposing any process mutation.
-  - **T3b — read-only process data:** implement sampling, details/tree and bounded
-    port probes; verify freshness, permissions, exited parents and unavailable
-    first CPU samples before adding actions.
-  - **T3c — process actions:** add confirmed signaling with fresh ownership and
-    PID/start-time checks; verify only with disposable child processes.
-  - Verify installed `sysinfo` support for CPU sampling, UID, PID/start time,
-    parents and signals; macOS port probes must be bounded with explicit errors.
-  - Revalidate ownership/identity; no automatic SIGKILL, tree signals or elevation.
-  - Verify adapter errors, overlap and cancellation with Rust tests; process
-    action tests use a disposable child only. Run the T1 checks plus
-    `cargo test -p tiny-ffi --locked` with `--locked`. Covers B1–B3/B5 and PC-P1–PC-P5.
+    src/bin/uniffi-bindgen.rs}`, `crates/tiny-core/src/processes/{mod.rs,snapshot.rs,actions.rs}`,
+    `crates/tiny/src/render/processes.rs`, `crates/tiny/tests/processes_smoke.rs`.
+    Attach every new module to the existing entry points.
+  - **T3a — workspace and adapter skeleton:**
+    - Add `crates/tiny-ffi` to `members` and `default-members`.
+    - `crate-type = ["staticlib", "lib"]`; the `lib` type serves Rust tests and
+      the bindgen binary.
+    - Run one unlocked `cargo build -p tiny-ffi` to update `Cargo.lock`. The
+      resulting lock, including the pre-existing local adjustment, is committed
+      with T3a; every later gate uses `--locked`.
+    - Add `#[cfg(not(panic = "unwind"))] compile_error!` in `tiny-ffi`.
+    - Implement:
+      - the session object;
+      - typed errors;
+      - the cancellation token;
+      - the progress callback trait;
+      - an RAII operation-gate guard that releases on unwind and treats mutex
+        poisoning as a typed error.
+    - A `debug_panic` export exists only behind a `test-hooks` cargo feature.
+    - Verify: Rust tests for typed errors, overlap rejection, cancellation, and
+      gate release after a panic caught with `std::panic::catch_unwind` around a
+      session method. Re-run the T1 gates, because the lock changed.
+  - **T3a′ — link smoke:** build `tiny-ffi` as a release staticlib, generate Swift
+    bindings and link one export from a scratch `swiftc` program.
+    - Linker flags come from
+      `cargo rustc -p tiny-ffi --release -- --print native-static-libs`.
+    - This proves the link early; it is a scratch check, not a deliverable.
+  - **T3b — read-only process data:**
+    - First move the bounded, fallible command runner into shared core: it times
+      out, returns typed errors on spawn failure, non-zero exit or timeout, and
+      lets tests inject a runner. T4a reuses it.
+    - Then implement:
+      - sampling (fresh vs first/unavailable CPU sample). A one-shot caller
+        such as the CLI takes two refreshes separated by
+        `sysinfo::MINIMUM_CPU_UPDATE_INTERVAL`, as `sys.rs` already does, so
+        CPU is measured rather than unavailable;
+      - details and parent/child tree (exited parent → unavailable);
+      - listening ports via a bounded `lsof` probe with explicit errors.
+  - **T3c — process actions:**
+    - Send signals with `libc::kill`. Make `libc` a direct `tiny-core`
+      dependency. Map `std::io::Error::last_os_error()`:
+      - EPERM → permission denied;
+      - ESRCH → already exited.
+    - One core entry `terminate(kind: graceful | force)`: graceful = SIGTERM,
+      force = SIGKILL. Each kind is confirmed separately by the caller; both
+      share the same revalidation. The adapter exposes the same entry.
+    - Revalidate PID + start time + UID immediately before signaling.
+    - After the signal, re-sample and report "still running" separately.
+    - Refuse:
+      - self and own parent;
+      - PID 0/1 (launchd);
+      - non-current-UID processes;
+      - a named protected list (`WindowServer`, `loginwindow`, `Dock`,
+        `SystemUIServer`, `Finder`).
+    - No automatic SIGKILL, tree signals or elevation.
+    - Accepted residual risk: `sysinfo` start time has 1 s granularity, so a
+      small check→signal window remains. Mitigate by also comparing executable
+      path/name.
+    - Tests use a disposable child only.
+  - **T3d — `tiny processes` CLI (additive, PC-P5):**
+    - Public syntax approved by the user on 2026-10-07:
+      - `tiny processes [--sort cpu|memory] [--limit N] [--json]` lists processes
+        (default sort `cpu`);
+      - `tiny processes show <PID> [--json]` shows detail, parent/children and
+        ports;
+      - `tiny processes quit <PID> [--force] [--yes]`: graceful by default, and
+        `--force` is the separately confirmed SIGKILL.
+    - Confirmation mirrors `clean --hard`:
+      - `quit` prompts unless `--yes`;
+      - `--force --yes` additionally requires `TINY_CONFIRM_FORCE=1`, like
+        `TINY_CONFIRM_HARD`;
+      - refusals (self, PID 1, protected, other UID) exit non-zero with the
+        reason.
+    - JSON fields (camelCase, as in `scan --json`): `pid`, `name`, `user`,
+      `isCurrentUser`, `parentPid`, `startTime`, `cpuPercent` (null when not
+      measured), `cpuMeasured`, `memoryBytes`, `sampledAt`. `show` adds
+      `children` and `ports` (null plus `portsError` when the probe fails).
+    - Dispatched in `main.rs`, rendered by `render/processes.rs`; existing
+      commands and flags are unchanged (B1). Same core calls as the adapter.
+    - `processes_smoke.rs` covers:
+      - the list and `--json` with `cpuMeasured: true`;
+      - `show` of a disposable child;
+      - `quit` of a disposable child;
+      - refused PID 1 and self;
+      - `--force --yes` refused without `TINY_CONFIRM_FORCE`.
+  - Verify:
+    - `cargo test -p tiny-core -p tiny -p tiny-ffi --all-targets --locked`;
+    - `cargo clippy -p tiny-core -p tiny -p tiny-ffi --all-targets --locked -- -D warnings`;
+    - `cargo run -p tiny --locked -- processes --help`;
+    - an exact `--help` diff against `main` for `clean`, `scan`, `sys`, `focus`
+      and `uninstall`. At top level, the only allowed difference is the added
+      `processes` line.
+  - Covers B1–B3/B5 and PC-P1–PC-P5.
 
 - [ ] **T4: Add cleanup discovery, trusted preview and recoverable execution**
-  - Depends on T3; shares its session, cancellation token and operation gate.
-  - Existing files: `crates/tiny-core/src/clean/{discover.rs,execute.rs,fs_safe.rs,types.rs}`,
-    registry/providers and `crates/tiny/src/render/clean` regression tests.
+  - Depends on T3 (session, token, gate, shared runner).
+  - Existing files: `crates/tiny-core/src/clean/{discover.rs,execute.rs,fs_safe.rs,types.rs,process.rs,runner.rs}`,
+    `crates/tiny-core/src/clean/providers/mod.rs` and providers using its helpers,
+    and `crates/tiny/src/render/clean` regression tests.
   - New adapter module: `crates/tiny-ffi/src/clean.rs` with mirror records and
     focused tests; keep presentation out of shared core, without importing Tauri app state.
   - **T4a — checked discovery/cancellation:** add checked, cancellable core
-    entry points rather than attempting to recover lost errors in the adapter.
-    Existing affected files include `clean/providers/mod.rs`,
-    `clean/process.rs`, `clean/runner.rs`, `clean/fs_safe.rs`, `clean/discover.rs`
-    and providers using those helpers. Add a small operation context with a
-    cancellation flag, checked directory/size walks, a fallible running-process
-    probe and bounded child-command collection. Thread it through discovery
-    loops/provider work, not just between categories. Keep compatibility
-    wrappers/signatures and existing CLI formatting; test output compatibility.
-    Verify denied reads, failed running-app probes, unavailable size data,
-    cancellation mid-walk and child-command timeout using injected fixtures.
-    Execute this slice through explicit checkpoints: first the fallible process
-    probe/bounded runner and their tests; then checked size/directory walks and
-    tests; finally provider/discovery integration. Run focused `tiny-core` tests
-    after each checkpoint and CLI regression gates after integration.
-  - **T4b — trusted preview:** store discovered candidates/previews/fingerprints
-    in the session object; verify selection boundaries and forged/expired/replaced paths.
-  - **T4c — execution/results:** require a confirmed preview ID, reject replay,
-    revalidate paths/providers/running apps and report partial outcomes. Refuse
-    an item when a required safety probe fails. Check cancellation before each
-    mutation and never label an unreadable walk as empty success.
-  - Keep destructive categories report-only; Trash failure preserves source,
-    and cancellation reports already-completed work without claiming freed space.
-  - Verify via temporary fixtures and an injected Trash adapter: empty selection,
-    cancellation, path overlap, symlinks/replacement, forged/expired/consumed
-    previews, partial results, panics during execution and Trash errors.
-    Re-run T1 checks and `cargo test -p tiny-ffi --locked`.
+    entry points rather than recovering lost errors in the adapter.
+    - Add an operation context with the cancellation flag, threaded through
+      discovery loops and provider work, not just between categories.
+    - Add checked directory/size walks and a fallible running-process probe that
+      uses the T3b runner.
+    - Isolate provider failures: a failing `provider.discover()` becomes a typed
+      per-category error entry, and other categories still return.
+    - Report "tool not found" (for example docker/go absent from `PATH`) as
+      unavailable instead of silently skipping.
+    - The shared runner resolves a tool once to an absolute path and spawns
+      that path. Lookup policy is a parameter:
+      - CLI: `PATH` only, so CLI behavior is unchanged (B1);
+      - app: `PATH`, then `/opt/homebrew/bin` and `/usr/local/bin`.
+
+      Test with an injected `PATH` lacking the tool and a fixture prefix
+      containing it.
+    - Keep the compatibility wrappers and the existing CLI output; test that
+      output stays compatible.
+    - Checkpoints:
+      1. checked size/directory walks and their tests;
+      2. provider/discovery integration with error isolation.
+
+      Run focused `tiny-core` tests after each checkpoint and the CLI regression
+      gates after integration.
+    - Verify with injected fixtures: denied reads, failed running-app probes,
+      unavailable size data, cancellation mid-walk, a child-command timeout, one
+      failing provider alongside healthy ones, and a missing tool.
+  - **T4b — trusted preview:**
+    - Store discovered candidates, previews, path fingerprints and the
+      `CleanOptions` used at discovery in the session object.
+    - Verify selection boundaries and forged/expired/replaced paths.
+  - **T4c — checked execution (modifies `execute.rs`, `types.rs`, `providers/mod.rs`):**
+    - Desktop eligibility: only a provider whose cleanup moves each listed path
+      to Trash. The checked execute validates each item and then calls the
+      `Trash` trait on that path directly. It never calls `provider.execute`, so
+      no provider-specific command runs from the desktop.
+    - Non-path providers are report-only on the desktop, with a reason. Today
+      that means `docker`, whose execute runs a system-wide
+      `docker system prune -af --volumes` even for Trash. Destructive categories
+      are report-only too.
+    - Test that a docker preview is refused for execution.
+    - Add a checked core execute entry taking the operation context and a
+      per-item validator: fingerprint, `symlink_metadata`, root containment,
+      running-app check, then the cancel check, run immediately before each item.
+    - It returns per-item results: moved, failed, skipped (with reason), not
+      attempted. Keep the existing `execute` as a compatibility wrapper.
+    - Introduce a `Trash` trait in core:
+      - the default implementation is the current Finder/`osascript` route;
+      - tests inject a fake;
+      - typed `AutomationDenied` (Apple Events error -1743) and `TrashFailed`
+        errors.
+    - The adapter requires a confirmed preview ID and marks the preview consumed
+      atomically before the first mutation, so a panic cannot enable a replay.
+    - Refuse an item when a required safety probe fails. Destructive categories
+      stay report-only. A Trash failure preserves the source. Cancellation
+      reports completed work without claiming freed space.
+    - Verify via temporary fixtures and the injected Trash:
+      - empty selection and cancellation;
+      - path overlap, symlinks and replacement;
+      - forged, expired and consumed previews;
+      - partial results;
+      - Automation denial and Trash errors;
+      - a panic mid-execute (preview stays consumed, gate released);
+      - a docker preview refused for execution.
+
+      Re-run the T1 gates and `cargo test -p tiny-ffi --locked`.
   - Covers B2/B3/B5 and PC-C1–PC-C6.
 
 - [ ] **T5: Integrate the accepted UI and bundle the native app**
@@ -173,40 +294,85 @@ native run. No core extraction task is marked accepted solely from inspection.
     which runs blocking calls off the main actor and delivers progress on it.
     It exists to test the real bindings without launching the SwiftUI app, not
     to add an interchangeable service framework.
-  - **T5a — build integration first:** `scripts/build-tiny-ffi.sh` builds the
-    arm64 static library, generates bindings and packages
-    `macos/Frameworks/TinyFFI.xcframework` as a SwiftPM `binaryTarget`; generated
-    files and the xcframework stay out of git. This untested coupling is the main
-    remaining FFI risk, so prove it before UI binding.
-    Verify: `scripts/build-tiny-ffi.sh` then `swift build --package-path macos --product Tiny`.
-  - **T5b — Swift engine tests:** add SwiftPM test target `TinyEngineTests` with
+  - Existing file: `.gitignore` (add the generated paths below).
+  - **T5a — build integration:** `scripts/build-tiny-ffi.sh`:
+    - builds the arm64 release staticlib (arm64-only is a stated local limit);
+    - runs bindgen in `--library` mode;
+    - packages `macos/Frameworks/TinyFFI.xcframework` with headers and the
+      generated modulemap renamed to `module.modulemap`, so the module name
+      `tiny_ffiFFI` matches what the generated Swift imports;
+    - copies `tiny_ffi.swift` into `macos/Sources/TinyEngine/`.
+
+    `Package.swift` declares the xcframework as a `binaryTarget`, with
+    `linkerSettings` for the frameworks/libraries reported by
+    `--print native-static-libs` (CoreFoundation, IOKit, libobjc and others
+    reported). A `--test-hooks` option builds the `test-hooks` feature for tests
+    only. The generated Swift file and `macos/Frameworks/` are git-ignored.
+    Verify: `scripts/build-tiny-ffi.sh`, then `swift build --package-path macos --product Tiny`.
+    `swift test` starts in T5b, which creates the first test target.
+  - **T5b — Swift engine tests:** add SwiftPM test target `TinyEngineTests`:
     `macos/Tests/TinyEngineTests/{EngineErrorTests.swift,EngineOperationTests.swift}`.
-    Exercise typed errors, panic-as-failure, progress on the main actor,
-    cancellation, overlap rejection and preview invalidation through a fresh
-    session, using temporary fixtures only.
-    Verify: `swift test --package-path macos`.
-  - **T5c — UI integration:** bind the accepted Processes/Clean layout to
-    `TinyEngine`; implement focus/keyboard, confirmations, denied/partial/stale
-    states and operation ownership without duplicating Rust decisions in Swift.
-  - **T5d — packaging/platform checks:** new `scripts/build-native-app.sh`
-    runs the FFI build and bundles the signed `Tiny` app. Verify Finder launch
-    without a terminal/dev server and FDA behavior for the app identity.
-  - Use the existing bundle ID/app-data location only after accounting for
-    retained Tauri data. Do not delete data or reset TCC; no extra DB is needed.
-  - Verify: `cargo build -p tiny -p tiny-ffi --locked`, `swift build --package-path macos --product Tiny`,
-    `scripts/build-native-app.sh`, `codesign --verify --deep --strict <bundle>`.
-  - Verify FDA behavior, launch/relaunch after termination and failure/cancel
-    flows on Mac. Review adapter input validation and mutation paths before
-    real-fixture native actions. Covers B2–B5 and PC-D1–PC-D3.
+    Built with `test-hooks` in the release profile the app ships. Exercise:
+    - typed errors;
+    - `debug_panic` → panic-as-failure → unknown-outcome mapping;
+    - progress delivered on the main actor;
+    - cancellation and overlap rejection;
+    - preview invalidation through a fresh session.
+
+    Temporary fixtures only. Verify:
+    `scripts/build-tiny-ffi.sh --test-hooks && swift test --package-path macos`.
+  - **T5c — UI integration:** bind the accepted bento layout to `TinyEngine`.
+    Implement:
+    - focus/keyboard and confirmations;
+    - denied/partial/stale/unavailable-tool states;
+    - an Automation-denied state with guidance;
+    - operation ownership, without duplicating Rust decisions in Swift.
+
+    Persist an in-flight marker in `UserDefaults` before each mutation and clear
+    it on any return. A marker at launch, or a `rustPanic` during execute, shows
+    the unknown-outcome notice. No CLI command display (MVP decision).
+  - **T5d — packaging/platform checks:** new `scripts/build-native-app.sh` always
+    rebuilds the FFI without `test-hooks`, then bundles the `Tiny` app.
+    - Bundle ID `com.mxrsv.tiny.dev`; `NSAppleEventsUsageDescription` in
+      Info.plist; and, if hardened runtime is enabled, the
+      `com.apple.security.automation.apple-events` entitlement.
+    - Sign with a stable Apple Development identity when one is available.
+      Otherwise sign ad hoc and accept that FDA/Automation grants reset after
+      each rebuild.
+    - Copy the protected-folder FDA probe logic from
+      `src-tauri/src/permissions.rs` into `tiny-core` as an enum-only
+      granted/required/unknown status. Explanation strings live in Swift.
+      `src-tauri` stays unchanged.
+    - Do not delete Tauri data or reset TCC; no extra DB is needed.
+  - Verify:
+    - `cargo build -p tiny -p tiny-ffi --locked`;
+    - `scripts/build-native-app.sh`;
+    - `codesign --verify --deep --strict <bundle>`;
+    - `nm <bundle>/Contents/MacOS/Tiny | grep -i debug_panic` prints nothing.
+  - On the Mac (temporary fixtures only):
+    - Finder launch;
+    - FDA and Automation grant/deny flows;
+    - provider availability compared between the Finder launch and the CLI;
+    - kill the app mid-execute, relaunch, and confirm the unknown-outcome notice
+      with no replay;
+    - failure/cancel flows.
+
+    Review adapter input validation and mutation paths before real-fixture
+    native actions. Covers B2–B5 and PC-D1–PC-D3.
 
 - [ ] **T6: Accept native flows and update shipped-behavior documentation**
-  - Depends on T5. Existing files: `README.md`, this plan and boundary spec;
-    update repo rules only for actual delivered locations/commands.
+  - Depends on T5. Existing files: `README.md` (document `tiny processes`),
+    `CHANGELOG.md` if present, this plan and the boundary spec; update repo rules
+    only for actual delivered locations/commands (D12).
   - Run real mutation checks only against disposable child/file fixtures;
     inspect user-approved rendered output and access-denied/unavailable states.
-  - Run `cargo fmt --all --check`, T1 regression checks, native contract tests,
-    `swift test --package-path macos`, app package build and bundle signature checks
-    after relevant final changes.
+  - After relevant final changes, run:
+    - `cargo fmt --all --check`;
+    - the T3 Rust gates;
+    - `cargo test -p tiny-ffi --locked`;
+    - `scripts/build-tiny-ffi.sh --test-hooks && swift test --package-path macos`;
+    - `scripts/build-native-app.sh`, the bundle signature checks and the
+      `debug_panic` symbol-absence check.
   - Retire the prototype after its accepted layout has been implemented; remove
     only this task's experimental files. Retiring the old Tauri shell is a later
     concrete, reviewable step, not an automatic delete during the demo.
@@ -215,6 +381,27 @@ native run. No core extraction task is marked accepted solely from inspection.
     and user visual/native acceptance are met.
 
 ## Verification evidence
+- 2026-10-07: plan review of T3–T5, iteration 1/3, returned `EXECUTABLE: Partial`
+  with 6 HIGH, 8 MEDIUM and 6 LOW findings: lock/workspace gates, missing
+  PC-P5 CLI, errno-less signaling, Finder Automation/Trash seam, core-level
+  per-item checks, the post-abort notice, panic/gate handling, runner ordering,
+  packaging, PATH, provider isolation, signing and commit destination. The user
+  decided:
+  - hide the CLI command from the GUI for the MVP;
+  - keep Finder/`osascript` Trash;
+  - dev bundle ID `com.mxrsv.tiny.dev`;
+  - code on `feat/native-desktop`.
+
+  T3–T6 were revised accordingly.
+- 2026-10-07: plan review iteration 2/3: all 20 iteration-1 findings verified
+  fixed, plus 10 new findings (1 HIGH, 4 MEDIUM, 5 LOW): docker prune behind
+  desktop Trash, test-hooks build order, T5a `swift test` order, Homebrew
+  resolution, the `tiny processes` contract and force gate, `--help` diff, FDA
+  probe placement, CLI CPU sampling, the force action in core, and PRD FR39
+  annotations. All 10 were revised; iteration 3 is pending.
+- 2026-10-07: demo command bar removed per the MVP decision; Swift 6 build
+  clean, `--snapshot` PNGs inspected, bundle re-signed (`codesign --verify
+  --strict` passed) and relaunched.
 - 2026-10-07 (T1, PR checkout `fb07b44`, local `Cargo.lock` change kept,
   `rustc` 1.90.0): `cargo test -p tiny-core -p tiny --all-targets --locked`
   exited 0: `tiny-core` 123 passed, `tiny` unit 19 passed, `clean_smoke` 3
@@ -241,11 +428,11 @@ native run. No core extraction task is marked accepted solely from inspection.
   alive. Stdio: same results, first frame 0.64–1.25 s through Foundation pipe
   readers versus 0.0045 s with raw `read(2)`. Build integration, aborts,
   cancellation and FDA were not tested. The user approved switching to UniFFI.
-- 2026-10-07: independent `plan-reviewer` review, iteration 3/3, returned
+- (Superseded by the UniFFI revision) 2026-10-07: independent `plan-reviewer` review, iteration 3/3, returned
   `EXECUTABLE: Yes`, no outstanding findings. Earlier missing native test targets
   and checked/cancellable core API details were resolved, with explicit work
   checkpoints added. This is plan evidence, not an implementation test result.
-- 2026-10-07: native prototype compiled with Swift 6 and a macOS 13 deployment
+- (Superseded by the bento demo entry above) 2026-10-07: native prototype compiled with Swift 6 and a macOS 13 deployment
   target; `swiftc -parse-as-library -swift-version 6 -target arm64-apple-macosx13.0
   TinyPreview.swift -o tiny-preview` exited 0. Bundle signature check returned
   `valid on disk` / `satisfies its Designated Requirement`; native launch succeeded.
@@ -278,22 +465,20 @@ native run. No core extraction task is marked accepted solely from inspection.
 
 ## Handoff
 
-As of 2026-10-07, the user approved SwiftUI + a shared Rust core linked
-in-process through UniFFI (replacing the stdio worker after the spike), kept the
-CLI, and selected Processes + Clean for the first native demo. Production
-native/adapter code has not been implemented. The proposed native module/adapter approach is recorded
-above for review; the user requested a docs commit on `main` on 2026-10-07; no branch/push/merge/release.
+As of 2026-10-07:
+- **Approved direction:** SwiftUI + a shared Rust core linked in-process through
+  UniFFI, the retained CLI, Processes + Clean, and the accepted bento demo
+  without a CLI command display.
+- **Branch:** `feat/native-desktop` exists in the PR worktree at `fb07b44`, with
+  the uncommitted local `Cargo.lock` adjustment.
+- **Implementation:** no production adapter, process or native code exists yet.
+- **Not authorized:** push, merge and release.
 
-Keep the canonical requirements and this existing plan in the primary checkout;
-the PR worktree is the inspected extracted-core source baseline. Preserve the
-primary dirty documents and the PR worktree's local Cargo.lock change. Do not
-interpret PR #1's broader feature set as accepted MVP scope.
+Keep the canonical requirements and this plan in the primary checkout. Do not
+interpret PR #1's broader feature set as accepted MVP scope. The accepted
+sample-only demo is the visual reference for T5c; retire its scratch source and
+bundle after the production UI implements it and the user accepts it.
 
-The accepted sample-only bento demo is the visual reference for T5c; no real
-operations are wired. Retire its scratch source and bundle after the production
-UI implements and the user accepts it.
-
-Independent plan review (`EXECUTABLE: Yes`) predates the UniFFI revision of T3–T5;
-re-review those tasks before starting T3.
-Next: re-review T3–T5, then start T3 on `rustc` 1.99.0.
+Next: plan review iteration 3/3, then T3a on `feat/native-desktop`. The
+`tiny processes` syntax in T3d was approved on 2026-10-07.
 Document actual checks/results here; do not create another plan.
