@@ -14,6 +14,26 @@ prd_status: "Không có PRD chính thức — dùng brainstorm doc làm requirem
 
 # Architecture Decision Document
 
+## Current delivery scope — 2026-10-06
+
+The user approved **Processes + Clean** as the first desktop MVP. Current
+requirements live in the [PRD Product Scope](prd.md#product-scope); execution
+is tracked in the [MVP plan](../../docs/plans/2026-10-06-processes-clean-mvp.md).
+On 2026-10-07 the user selected a SwiftUI macOS shell linking the shared Rust
+core in-process through UniFFI, kept the Rust CLI, and reconfirmed Processes + Clean. The
+[native/CLI boundary spec](../../docs/specs/2026-10-07-swiftui-cli-boundary.md)
+owns that contract. Keep D1's shared Rust core behind both the CLI and the app, with Swift owning
+native UI/platform integration. Add process inspection and confirmed process
+termination to Rust. For this MVP, preserve the
+existing Trash workflow; D5's app-managed quarantine/undo and D4's associated
+SQLite journal are deferred. The older Smart Scan-first implementation
+sequence below is a broader architecture reference, not the current task
+order. PR #1 (`fb07b44`) contains a runnable Tauri app and extracted Rust core,
+but its broader feature set does not change this MVP scope. The sections below
+record the earlier Tauri architecture; their shell, IPC, and frontend-stack
+choices are superseded by the native/CLI boundary spec. SwiftUI production
+integration has not been implemented or accepted.
+
 _Tài liệu này xây dựng dần qua từng bước thảo luận. Các section được nối thêm khi đi qua mỗi quyết định kiến trúc._
 
 ## Bối cảnh

@@ -20,6 +20,19 @@ existing_patterns_found: 8
 
 # Project Context for AI Agents
 
+**Current MVP scope (2026-10-06):** Processes + Clean, as approved by the user.
+The [PRD Product Scope](planning-artifacts/prd.md#product-scope) owns current
+requirements and the [MVP plan](../docs/plans/2026-10-06-processes-clean-mvp.md)
+owns execution. On 2026-10-07 the user selected SwiftUI + the shared Rust core
+linked in-process through UniFFI, kept the Rust CLI, and reconfirmed the MVP scope.
+Follow the [native/CLI boundary spec](../docs/specs/2026-10-07-swiftui-cli-boundary.md).
+Keep business logic in Rust and native presentation/platform integration in
+Swift. The Tauri-specific shell/IPC/frontend rules below are historical and
+superseded for new native work; the Rust safety rules remain applicable. App-managed
+quarantine/undo, its SQLite journal, and Smart Scan-first ordering below are
+deferred for this delivery; version numbers in this older record must be
+rechecked before installing dependencies.
+
 _This file contains critical rules and patterns that AI agents must follow when implementing code in this project. Focus on unobvious details that agents might otherwise miss._
 
 ---
