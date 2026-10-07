@@ -60,8 +60,9 @@ silently omitted.
   dependency, and Rust internal types are not exposed to Swift.
 - Paths cross the boundary as strings, and tuples become named records.
   Generated bindings are build output and are never edited by hand.
-- Errors are typed adapter enums with stable cases and user-facing messages.
-  Swift never maps an error, panic, or missing result to empty success.
+- Errors are typed adapter enums with stable cases plus diagnostic detail.
+  User-facing copy and guidance (including FDA/Automation explanations) live in
+  Swift. Swift never maps an error, panic, or missing result to empty success.
 - Long operations are blocking Rust calls run off the main actor. Progress uses
   a foreign callback trait; callbacks arrive on a background thread, so Swift
   hops to the main actor before touching UI state. Progress belongs to the call

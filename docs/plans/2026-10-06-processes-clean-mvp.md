@@ -249,18 +249,25 @@ native run; T3a folds it into the first lock update and commits it. No core extr
       `CleanOptions` used at discovery in the session object.
     - Verify selection boundaries and forged/expired/replaced paths.
   - **T4c — checked execution (modifies `execute.rs`, `types.rs`, `providers/mod.rs`):**
-    - Desktop eligibility: only a provider whose cleanup moves each listed path
-      to Trash. The checked execute validates each item and then calls the
-      `Trash` trait on that path directly. It never calls `provider.execute`, so
-      no provider-specific command runs from the desktop.
-    - Non-path providers are report-only on the desktop, with a reason. Today
-      that means `docker`, whose execute runs a system-wide
-      `docker system prune -af --volumes` even for Trash. Destructive categories
-      are report-only too.
-    - Test that a docker preview is refused for execution.
+    - Desktop eligibility is an explicit, deny-by-default opt-in on
+      `CleanProvider` (for example `fn desktop_trash_paths(&self) -> bool { false }`).
+      It is set to true only for providers whose cleanup moves each listed path
+      to Trash (`execute_per_item`). The checked execute validates each item and
+      then calls the `Trash` trait on that path directly; it never calls
+      `provider.execute`, so no provider-specific command runs from the desktop.
+    - Non-opted-in providers are report-only on the desktop, with a reason.
+      Today that includes `docker`, whose execute runs a system-wide
+      `docker system prune -af --volumes` even for Trash, and all Destructive
+      categories.
+    - Tests:
+      - a docker preview is refused for execution;
+      - every ID in `known_category_ids()` has a deliberate opt-in value.
     - Add a checked core execute entry taking the operation context and a
       per-item validator: fingerprint, `symlink_metadata`, root containment,
       running-app check, then the cancel check, run immediately before each item.
+      Root containment includes each provider's discovery roots and
+      provider-specific guards such as `is_safe_cargo_path`. These are enforced
+      checks; today `is_safe_cargo_path` is only a `debug_assert!`.
     - It returns per-item results: moved, failed, skipped (with reason), not
       attempted. Keep the existing `execute` as a compatibility wrapper.
     - Introduce a `Trash` trait in core:
@@ -270,8 +277,8 @@ native run; T3a folds it into the first lock update and commits it. No core extr
         errors.
     - The adapter requires a confirmed preview ID and marks the preview consumed
       atomically before the first mutation, so a panic cannot enable a replay.
-    - Refuse an item when a required safety probe fails. Destructive categories
-      stay report-only. A Trash failure preserves the source. Cancellation
+    - Refuse an item when a required safety probe fails. A Trash failure
+      preserves the source. Cancellation
       reports completed work without claiming freed space.
     - Verify via temporary fixtures and the injected Trash:
       - empty selection and cancellation;
@@ -348,7 +355,9 @@ native run; T3a folds it into the first lock update and commits it. No core extr
     - `cargo build -p tiny -p tiny-ffi --locked`;
     - `scripts/build-native-app.sh`;
     - `codesign --verify --deep --strict <bundle>`;
-    - `nm <bundle>/Contents/MacOS/Tiny | grep -i debug_panic` prints nothing.
+    - after the build, `grep -ci debugpanic macos/Sources/TinyEngine/tiny_ffi.swift`
+      prints `0`, and `strings <bundle>/Contents/MacOS/Tiny | grep -i debug_panic`
+      prints nothing. `nm` alone can miss stripped symbols.
   - On the Mac (temporary fixtures only):
     - Finder launch;
     - FDA and Automation grant/deny flows;
@@ -398,7 +407,13 @@ native run; T3a folds it into the first lock update and commits it. No core extr
   desktop Trash, test-hooks build order, T5a `swift test` order, Homebrew
   resolution, the `tiny processes` contract and force gate, `--help` diff, FDA
   probe placement, CLI CPU sampling, the force action in core, and PRD FR39
-  annotations. All 10 were revised; iteration 3 is pending.
+  annotations. All 10 were revised.
+- 2026-10-07: plan review iteration 3/3 returned `EXECUTABLE: Yes`, no
+  blockers. All 10 iteration-2 findings were verified fixed; the trend over
+  three iterations was 20 → 10 → 4 findings and HIGH 6 → 1 → 0. The remaining
+  findings (1 MEDIUM, 3 LOW) were applied: deny-by-default desktop eligibility
+  opt-in with enforced provider path guards, a stronger test-hooks absence
+  gate, error-copy ownership in Swift, and removal of a duplicate line.
 - 2026-10-07: demo command bar removed per the MVP decision; Swift 6 build
   clean, `--snapshot` PNGs inspected, bundle re-signed (`codesign --verify
   --strict` passed) and relaunched.
@@ -479,6 +494,6 @@ interpret PR #1's broader feature set as accepted MVP scope. The accepted
 sample-only demo is the visual reference for T5c; retire its scratch source and
 bundle after the production UI implements it and the user accepts it.
 
-Next: plan review iteration 3/3, then T3a on `feat/native-desktop`. The
+Next: T3a on `feat/native-desktop`. The
 `tiny processes` syntax in T3d was approved on 2026-10-07.
 Document actual checks/results here; do not create another plan.
