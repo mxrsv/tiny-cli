@@ -118,7 +118,9 @@ native run; T3a folds it into the first lock update and commits it. No core extr
     src/bin/uniffi-bindgen.rs}`, `crates/tiny-core/src/processes/{mod.rs,snapshot.rs,actions.rs}`,
     `crates/tiny/src/render/processes.rs`, `crates/tiny/tests/processes_smoke.rs`.
     Attach every new module to the existing entry points.
-  - **T3a — workspace and adapter skeleton:**
+  - **T3a — workspace and adapter skeleton:** done 2026-10-07 (`e6f1712` on
+    `feat/native-desktop`). Mutex-poison handling is deferred to T4b, the
+    first task that adds a mutex; the T3a gate is a lock-free `AtomicBool`.
     - Add `crates/tiny-ffi` to `members` and `default-members`.
     - `crate-type = ["staticlib", "lib"]`; the `lib` type serves Rust tests and
       the bindgen binary.
@@ -137,7 +139,7 @@ native run; T3a folds it into the first lock update and commits it. No core extr
     - Verify: Rust tests for typed errors, overlap rejection, cancellation, and
       gate release after a panic caught with `std::panic::catch_unwind` around a
       session method. Re-run the T1 gates, because the lock changed.
-  - **T3a′ — link smoke:** build `tiny-ffi` as a release staticlib, generate Swift
+  - **T3a′ — link smoke:** done 2026-10-07 (scratch, evidence below). build `tiny-ffi` as a release staticlib, generate Swift
     bindings and link one export from a scratch `swiftc` program.
     - Linker flags come from
       `cargo rustc -p tiny-ffi --release -- --print native-static-libs`.
@@ -390,6 +392,31 @@ native run; T3a folds it into the first lock update and commits it. No core extr
     and user visual/native acceptance are met.
 
 ## Verification evidence
+- 2026-10-07 (T3a, `feat/native-desktop` `e6f1712`, `rustc` 1.99.0):
+  - **Lock:** one unlocked `cargo build -p tiny-ffi` updated `Cargo.lock`. It
+    was committed together with the earlier local adjustment.
+  - **Tests:** `cargo test -p tiny-core -p tiny -p tiny-ffi --all-targets --locked`
+    exited 0: `tiny-core` 123, `tiny` 19, `clean_smoke` 3, `scan_smoke` 1 and
+    `tiny-ffi` 5 passed; 0 failed. The `tiny-ffi` tests cover typed error
+    mapping, progress conversion, overlap rejection, gate release after a
+    caught panic, and cancellation.
+  - **Clippy:** `-D warnings` exited 0 for the three crates, and for `tiny-ffi`
+    with `--features test-hooks,bindgen`.
+  - **Format:** `cargo fmt -p tiny-ffi --check` passed.
+  - **CLI baseline:** `--help` for the top level and `clean`, `scan`, `sys`,
+    `focus` and `uninstall` is identical to `main`.
+- 2026-10-07 (T3a′ link smoke, scratch `/tmp/claude-501/t3a-link`):
+  - **Flags:** `--print native-static-libs` reported `-framework CoreFoundation
+    -lobjc -framework IOKit -liconv -lSystem -lc -lm`.
+  - **Bindings:** bindgen `--library` mode works on `libtiny_ffi.a` (no cdylib
+    needed).
+  - **Shipped-style build:** a Swift 6 program linked the release staticlib with
+    those flags, called `TinySession`/`CancellationToken`, and exited 0. The
+    generated Swift has 0 `debugPanic` matches and `strings` finds 0
+    `debug_panic`.
+  - **`test-hooks` build:** `strings` finds 2 matches, a positive control for the
+    T5d gate. `debugPanic` surfaced as `rustPanic("debug_panic test hook")`, and
+    the session reported `busy=false` afterwards.
 - 2026-10-07: plan review of T3–T5, iteration 1/3, returned `EXECUTABLE: Partial`
   with 6 HIGH, 8 MEDIUM and 6 LOW findings: lock/workspace gates, missing
   PC-P5 CLI, errno-less signaling, Finder Automation/Trash seam, core-level
@@ -494,6 +521,6 @@ interpret PR #1's broader feature set as accepted MVP scope. The accepted
 sample-only demo is the visual reference for T5c; retire its scratch source and
 bundle after the production UI implements it and the user accepts it.
 
-Next: T3a on `feat/native-desktop`. The
+Next: T3b on `feat/native-desktop` (shared bounded runner first). The
 `tiny processes` syntax in T3d was approved on 2026-10-07.
 Document actual checks/results here; do not create another plan.
