@@ -74,7 +74,8 @@ native run. No core extraction task is marked accepted solely from inspection.
     and this plan; add the boundary spec without copying product requirements.
   - Verify: documentation links, `git diff --check`, independent plan review.
 
-- [ ] **T1: Validate the extracted core and existing CLI baseline**
+- [x] **T1: Validate the extracted core and existing CLI baseline**
+  - Completed 2026-10-07 at PR checkout `fb07b44`; evidence below.
   - Existing source files: PR checkout `Cargo.toml`, `crates/tiny-core/src`,
     `crates/tiny/src/{cli.rs,main.rs,render}`, `crates/tiny/tests`.
   - Preserve current CLI names/flags, registry IDs/families, scan JSON and
@@ -109,8 +110,8 @@ native run. No core extraction task is marked accepted solely from inspection.
     src/bin/uniffi-bindgen.rs}`,
     `crates/tiny-core/src/processes/{mod.rs,snapshot.rs,actions.rs}` and focused
     adjacent/CLI tests. Attach every new module to the existing entry points.
-    Resolve the UniFFI 0.32 toolchain requirement first: the spike needed
-    `cargo-platform` pinned to 0.3.1 under local `rustc` 1.90.
+    UniFFI 0.32 needs `rustc` ≥ 1.91; the local toolchain is 1.99.0 since
+    2026-10-07, so no `cargo-platform` pin is needed.
   - **T3a — adapter first:** implement the session object, typed errors, the
     cancellation token, progress callback trait and the operation gate. Verify
     with Rust tests calling the exported functions: typed errors, unwinding
@@ -214,6 +215,17 @@ native run. No core extraction task is marked accepted solely from inspection.
     and user visual/native acceptance are met.
 
 ## Verification evidence
+- 2026-10-07 (T1, PR checkout `fb07b44`, local `Cargo.lock` change kept,
+  `rustc` 1.90.0): `cargo test -p tiny-core -p tiny --all-targets --locked`
+  exited 0: `tiny-core` 123 passed, `tiny` unit 19 passed, `clean_smoke` 3
+  passed (164.29 s), `scan_smoke` 1 passed, 0 failed. `cargo clippy -p tiny-core
+  -p tiny --all-targets --locked -- -D warnings` exited 0. `--help` output for
+  the top level and `clean`, `scan`, `sys`, `focus`, `uninstall` is identical
+  between `main` and the PR checkout (B1/PC-C6 baseline).
+- 2026-10-07: `rustup update stable` moved the toolchain from `rustc` 1.90.0 to
+  1.99.0, satisfying UniFFI 0.32's `rustc` 1.91 requirement without pinning
+  `cargo-platform`. T1 re-run on 1.99.0: clippy `-D warnings` exited 0; tests
+  exited 0 with the same counts (123 + 19 + 3 + 1 passed, 0 failed).
 - 2026-10-07: bento-grid demo rebuilt; Swift 6 build with a macOS 14 target
   produced no errors or warnings. `--snapshot` rendered Processes, Clean,
   Clean-stale and Unavailable PNGs that were inspected for layout defects (fixed:
@@ -283,5 +295,5 @@ UI implements and the user accepts it.
 
 Independent plan review (`EXECUTABLE: Yes`) predates the UniFFI revision of T3–T5;
 re-review those tasks before starting T3.
-Next: T1 baseline in the PR worktree, then re-review T3–T5 and start T3.
+Next: re-review T3–T5, then start T3 on `rustc` 1.99.0.
 Document actual checks/results here; do not create another plan.
