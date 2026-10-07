@@ -1,28 +1,117 @@
 # tiny-cli
 
-A small, practical Rust CLI for everyday performance and productivity utilities.
-The binary is named `tiny`. The project is intentionally minimal so it stays
-easy to read while it grows.
+A local macOS desktop app and Rust CLI for everyday performance and productivity.
+The desktop uses Tauri 2 + React 19; its engine is shared with the `tiny` CLI.
+All filesystem operations stay on your machine.
 
 ## Goals
 
-- Keep dependencies tight (`clap`, `anyhow`, `serde`, `sysinfo`).
-- Separate CLI parsing (`src/cli.rs`) from command execution (`src/commands/`).
+- Keep the engine independent of the GUI and async runtime.
+- Separate CLI parsing/presentation (`crates/tiny`) from computation (`crates/tiny-core`).
 - Provide useful, real-world commands that are safe by default.
 
 ## Build & Run
 
+### macOS desktop
+
+Requirements: macOS 13+, Node.js 22+, Rust stable, Xcode Command Line Tools
+(`xcode-select --install`).
+
 ```bash
-cargo build
-cargo run -- --help
+npm ci
+npm run tauri dev
 ```
+
+To create an ad-hoc signed `.app` and `.dmg`:
+
+```bash
+npm run tauri build
+```
+
+Output is under `target/release/bundle/`. Developer ID signing and notarization
+are deferred; the current bundle is for local development.
+
+The desktop includes Smart Scan and an explained Health Score, cleanup with
+three risk lanes and path preview, Space Lens treemap/sunburst, live activity,
+scan history, a storage forecast, undo history and background scan preferences.
+It checks Full Disk Access at startup and guides you to System Settings when
+macOS denies access. The `unknown` state means access could not be verified;
+results may omit protected locations.
+
+Closing the window hides Tiny to its menubar tray. Use **Quit Tiny** in the tray
+to exit. Scheduled scans run while the app remains open, and optional launch at
+login keeps the tray available. Rules send notifications and never delete files.
+Settings use the Tauri store; history and cleanup journals use SQLite under the
+app data directory (normally `~/Library/Application Support/com.mxrsv.tiny/`).
+The most recent 120 scan snapshots are retained.
+
+Cleanup always needs a preview and explicit confirmation. Files first go to
+macOS Trash (restore with Finder **Put Back**); if Trash refuses the move, Tiny
+tries its own quarantine on the same volume (restore from **Undo & recovery**).
+If neither move works, the source is preserved and the failure is shown. Preview
+plans expire after ten minutes and cannot be replayed. Restoration never
+overwrites an existing path. Quarantine entries have a 30-day retention marker
+and are kept at least that long; this version does not purge them automatically.
+Finder controls its own Trash retention.
+
+The GUI keeps Docker prune, Trash emptying and Time Machine snapshot deletion
+report-only because they cannot be undone. Health ranking uses risk and size;
+the score is a heuristic indicator, not a hardware diagnosis or an AI service.
+Space Lens is read-only and reports skipped paths and limits. It retains the
+200 largest entries per folder and expands deeper branches on demand; it scans
+to a maximum depth of 64. The whole-disk estimate can differ from macOS Storage
+because of APFS snapshots/shared blocks and inaccessible folders.
+
+### Browser preview
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:1420`. Outside Tauri this is an explicitly labelled
+read-only demo with sample data. It does not access your files; cleanup, restore
+and preferences writes are disabled. The production frontend builds with
+`npm run build`.
+
+### CLI
+
+```bash
+cargo build -p tiny
+cargo run -p tiny -- --help
+```
+
+CLI source/presentation is in `crates/tiny/src/`; computation and providers live
+in `crates/tiny-core/src/`. `src/` is the React frontend, and `src-tauri/` owns
+native IPC, permissions, persistence, background work and recoverable moves.
+
+### Validation
+
+```bash
+npm run build
+npm run test
+cargo fmt --all --check
+cargo test --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+```
+
+On macOS build the frontend before Cargo checks: the Tauri context embeds
+`dist/`. Linux checks cover core, CLI and portable app services; the native
+Tauri shell is macOS-only. GitHub Actions also has a macOS test/build job.
+
+For native smoke testing: launch Tiny, verify the FDA denied/unknown/granted
+states, run Smart Scan, preview a disposable cache path and confirm the move,
+restore it via Finder or Tiny, and verify the tray survives closing the window.
+Check notification permissions, launch at login, scheduled scan settings and a
+read-only Space Lens scan on both a directory and `/`.
+
+See `docs/plans/2026-10-06-tiny-desktop.md` for implementation scope and limits.
 
 ## Commands
 
 ### `sys` — system information
 
 ```bash
-cargo run -- sys
+cargo run -p tiny -- sys
 ```
 
 Reports OS, host, uptime, CPU count and model, memory usage, and per-disk
@@ -31,8 +120,8 @@ usage.
 ### `scan` — scan common folders, report only
 
 ```bash
-cargo run -- scan
-cargo run -- scan --min-size-mb 100 --older-than-days 30
+cargo run -p tiny -- scan
+cargo run -p tiny -- scan --min-size-mb 100 --older-than-days 30
 ```
 
 Scans `~/Downloads`, `~/Desktop`, and `~/Documents`. Reports the largest files
@@ -115,8 +204,8 @@ data. They are intentionally separate — personal files never appear in
 ### `focus` — local focus timer
 
 ```bash
-cargo run -- focus --minutes 25
-cargo run -- focus --minutes 50 --label "deep work"
+cargo run -p tiny -- focus --minutes 25
+cargo run -p tiny -- focus --minutes 50 --label "deep work"
 ```
 
 Runs a synchronous timer with a simple progress bar. When the session ends,
