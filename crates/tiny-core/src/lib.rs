@@ -4,6 +4,7 @@ pub mod focus;
 pub mod health;
 pub mod options;
 pub mod progress;
+pub mod runner;
 pub mod scan;
 pub mod space_lens;
 pub mod sys;
