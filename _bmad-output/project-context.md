@@ -26,20 +26,20 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 ## Technology Stack & Versions
 
-### Hiện tại (single binary crate)
+### Hiện tại (workspace, migration desktop ngày 2026-10-06)
 
-- **Rust 2021 edition** — binary crate `tiny-cli`, binary tên `tiny`, macOS-only
+- **Rust 2021 edition** — workspace `crates/tiny-core`, `crates/tiny`, `src-tauri`; binary CLI tên `tiny`, desktop macOS-only
 - `clap` 4.5 (feature `derive`) — định nghĩa CLI bằng struct derive
-- `anyhow` 1.0 — error handling ở mọi ranh giới
+- `anyhow` 1.0 — error handling ở CLI boundary
 - `serde` 1.0 (feature `derive`) + `serde_json` 1.0 — `scan --json`
 - `sysinfo` 0.32 — đọc thông tin hệ thống cho lệnh `sys`
 - `dialoguer` 0.11 — prompt tương tác cho lệnh `clean`
 - Dev: `assert_cmd` 2 + `predicates` 3 — integration test
 
-### Đã chốt cho migration (architecture.md — D1–D10, chưa code)
+### Desktop đã triển khai (architecture.md — D1–D10)
 
-- Repo → Cargo **workspace 3 crate**: `crates/tiny-core` · `crates/tiny` · `src-tauri`
-- `tauri` 2.11.2 · React 19 · Vite · `tokio` 1.52 (CHỈ ở `src-tauri`)
+- Cargo **workspace 3 crate**: `crates/tiny-core` · `crates/tiny` · `src-tauri`
+- `tauri` 2.11.2 · React 19 · Vite · runtime Tauri/Tokio CHỈ ở `src-tauri` (lockfile chốt version)
 - `rusqlite` 0.39 · `trash` 5.2 · `thiserror` 2.0
 - Frontend: TanStack Query 5.100 · Zustand 5.0 · Tailwind · d3-hierarchy · Vitest
 
@@ -53,7 +53,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ### Language-Specific Rules (Rust)
 
 - **Error handling 2 tầng:** CLI binary dùng `anyhow::Result` ở ranh giới ngoài cùng;
-  `tiny-core` (sau migration) dùng `thiserror` typed errors. KHÔNG dùng `anyhow` trong core.
+  `tiny-core` dùng `thiserror` typed errors. KHÔNG dùng `anyhow` trong core.
 - **Cấm `unwrap()` / `expect()`** trên đường chạy thật — đặc biệt ở lớp Tauri command
   (phải map sang `ErrorPayload`). Chỉ chấp nhận trong `#[cfg(test)]`.
 - **`panic!` chỉ cho invariant** đã được test ghim. Ví dụ có sẵn: `category_family()`
@@ -70,8 +70,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 #### CLI (clap)
 
-- Toàn bộ định nghĩa CLI nằm ở `src/cli.rs` — struct derive. Mỗi lệnh một `*Opts` struct.
-- Lệnh mới: thêm variant vào enum `Commands` + nhánh `match` trong `main.rs` gọi `commands::<x>::run(opts)`.
+- Toàn bộ định nghĩa CLI nằm ở `crates/tiny/src/cli.rs` — struct derive. Mỗi lệnh một `*Opts` struct.
+- Lệnh mới: thêm variant vào enum `Commands` + nhánh `match` trong `crates/tiny/src/main.rs` gọi `render::<x>::run(opts)`.
 
 #### Provider pattern cho lệnh `clean` (QUAN TRỌNG NHẤT)
 
@@ -84,7 +84,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Phân biệt `ExecAction` (ngữ nghĩa: Trash/HardDelete/EmptyTrash) vs `CleanAction` (UI menu).
   Provider có quyền từ chối action không hợp lệ bằng `Err` (xem `TrashProvider`).
 
-#### Tauri + React (sau migration — architecture.md)
+#### Tauri + React (architecture.md)
 
 - Tauri command ở `src-tauri/src/commands/`, mỗi domain 1 file; tên `snake_case`.
 - Event đặt tên `domain:action` (`scan:progress`, `clean:done`).
@@ -103,7 +103,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
   `category_family()` — thêm provider mới mà quên đăng ký family → test panic. Đừng xoá test này.
 - **Provider test ghim hành vi:** mỗi provider có quyền từ chối `ExecAction` sai —
   viết test khẳng định việc từ chối đó (mẫu: `trash.rs` test `rejects_trash_action`).
-- **Frontend (sau migration):** Vitest, test co-located `*.test.ts` cạnh file nguồn.
+- **Frontend:** Vitest, test co-located `*.test.ts` cạnh file nguồn.
 - Chạy: `cargo test` (Rust core + CLI) · `npm run test` (Vitest frontend).
 
 ### Code Quality & Style Rules
@@ -125,8 +125,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
   (mẫu lịch sử repo: `feat(clean): M3.1 — quarantine, crash_reports`).
 - **PR:** tiêu đề + nội dung tiếng Việt; identifier/path/CLI giữ tiếng Anh. Mỗi PR một mối quan tâm.
 - **Plan/spec:** tài liệu kế hoạch nằm ở `docs/plans/` và `docs/specs/`, đặt tên `YYYY-MM-DD-<slug>.md`.
-- **`.DS_Store` và `/target`** đã trong `.gitignore` — không commit. `Cargo.lock` HIỆN bị ignore
-  (binary crate cũ); khi chuyển workspace có app thì cân nhắc commit lại.
+- **`.DS_Store` và `/target`** đã trong `.gitignore` — không commit. `Cargo.lock` và `package-lock.json` được commit để build có thể lặp lại.
 
 ### Critical Don't-Miss Rules
 
@@ -156,7 +155,16 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 - Giữ file lean, chỉ tập trung những gì agent cần.
 - Cập nhật khi tech stack hoặc pattern thay đổi — đặc biệt sau khi migration Tauri workspace
-  thực sự diễn ra (lúc đó nhiều rule "sau migration" chuyển thành "hiện hành").
+  hoặc khi thay đổi contract IPC và safety.
 - Rà soát định kỳ, bỏ rule đã trở nên hiển nhiên.
 
-Last Updated: 2026-05-19
+Last Updated: 2026-10-06
+
+## Desktop implementation notes
+
+- `tiny-core::options` không chứa flag presentation (`--json`, `--yes`, picker...). CLI chuyển options bằng `From<&...>`.
+- `src-tauri::service` chỉ nhận đường dẫn trong scan đang lưu; preview id là server-generated, TTL 10 phút, dùng một lần. Luôn fingerprint trước move, re-discover để tôn trọng app-running gates.
+- GUI không thực thi provider irreversible (`trash`, `docker`, `time-machine-local`). Trash Put Back qua Finder; quarantine restore không overwrite. Không tự purge quarantine ở bản này.
+- `AppState::begin()` serialize các long-operation; mọi event stream có `:done` hoặc `:error`, kể cả khi worker fail.
+- Native Tauri modules/deps chỉ compile trên macOS. Linux vẫn test portable app services. Browser ngoài Tauri là demo được ghi nhãn và không được thực thi mutation.
+- `space_lens::validate_path` từ chối symlink ở mọi ancestor. Với fixture trên macOS, canonicalize temporary root trước khi tạo file (`/var` và `/tmp` có thể là symlink hệ thống).

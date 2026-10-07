@@ -1,6 +1,11 @@
 /target
-Cargo.lock
 *.swp
 .DS_Store
 .claude/settings.local.json
 .claude/*.lock
+
+/node_modules
+/dist
+/src-tauri/target
+*.tsbuildinfo
+/src-tauri/gen
