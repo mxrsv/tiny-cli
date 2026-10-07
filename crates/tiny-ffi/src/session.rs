@@ -2,15 +2,18 @@
 //! cancellation token.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+use tiny_core::processes::Sampler;
 
 use crate::FfiError;
 
-/// One per app session. Rejects overlapping operations instead of queueing or
-/// merging them.
-#[derive(Debug, Default, uniffi::Object)]
+/// One per app session. Rejects overlapping scans and mutations instead of
+/// queueing or merging them; short read-only process queries bypass the gate.
+#[derive(Default, uniffi::Object)]
 pub struct TinySession {
     busy: AtomicBool,
+    sampler: Mutex<Sampler>,
 }
 
 #[uniffi::export]
@@ -34,6 +37,12 @@ impl TinySession {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| FfiError::Busy)?;
         Ok(OperationGuard { busy: &self.busy })
+    }
+
+    /// The sampler holds no invariant a panic could break, so a poisoned lock
+    /// is recovered rather than failing every later query.
+    pub(crate) fn sampler(&self) -> MutexGuard<'_, Sampler> {
+        self.sampler.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

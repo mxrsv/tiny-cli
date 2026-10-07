@@ -3,6 +3,7 @@ pub mod error;
 pub mod focus;
 pub mod health;
 pub mod options;
+pub mod processes;
 pub mod progress;
 pub mod runner;
 pub mod scan;
