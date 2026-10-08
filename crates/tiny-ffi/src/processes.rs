@@ -18,6 +18,7 @@ pub struct FfiProcessInfo {
     pub cpu_percent: Option<f32>,
     pub cpu_measured: bool,
     pub memory_bytes: Option<u64>,
+    pub executable_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -25,6 +26,15 @@ pub struct FfiProcessSnapshot {
     pub processes: Vec<FfiProcessInfo>,
     pub sampled_at: u64,
     pub cpu_measured: bool,
+    pub system_usage: FfiSystemUsage,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiSystemUsage {
+    pub cpu_percent: Option<f32>,
+    pub cpu_warming_up: bool,
+    pub memory_used_bytes: Option<u64>,
+    pub memory_total_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
@@ -52,8 +62,8 @@ pub struct FfiProcessDetail {
 #[uniffi::export]
 impl TinySession {
     /// Samples all processes. CPU is measured from a process's third sample.
-    pub fn process_list(&self) -> FfiProcessSnapshot {
-        self.sampler().sample().into()
+    pub fn process_list(&self) -> Result<FfiProcessSnapshot, FfiError> {
+        Ok(self.sampler().sample().into())
     }
 
     /// Resamples, then returns detail, parent/children and listening ports.
@@ -84,6 +94,9 @@ impl From<ProcessInfo> for FfiProcessInfo {
             cpu_percent: info.cpu_percent,
             cpu_measured: info.cpu_measured,
             memory_bytes: info.memory_bytes,
+            executable_path: info
+                .exe
+                .and_then(|path| path.into_os_string().into_string().ok()),
         }
     }
 }
@@ -94,6 +107,12 @@ impl From<ProcessSnapshot> for FfiProcessSnapshot {
             processes: snapshot.processes.into_iter().map(Into::into).collect(),
             sampled_at: snapshot.sampled_at,
             cpu_measured: snapshot.cpu_measured,
+            system_usage: FfiSystemUsage {
+                cpu_percent: snapshot.system_usage.cpu_percent,
+                cpu_warming_up: snapshot.system_usage.cpu_warming_up,
+                memory_used_bytes: snapshot.system_usage.memory_used_bytes,
+                memory_total_bytes: snapshot.system_usage.memory_total_bytes,
+            },
         }
     }
 }
@@ -124,13 +143,13 @@ mod tests {
     #[test]
     fn cpu_is_unmeasured_until_the_third_list() {
         let session = TinySession::new();
-        let first = session.process_list();
+        let first = session.process_list().unwrap();
         assert!(!first.cpu_measured);
         assert!(first.processes.iter().all(|p| p.cpu_percent.is_none()));
         std::thread::sleep(sysinfo_interval());
-        assert!(!session.process_list().cpu_measured);
+        assert!(!session.process_list().unwrap().cpu_measured);
         std::thread::sleep(sysinfo_interval());
-        let third = session.process_list();
+        let third = session.process_list().unwrap();
         assert!(third.cpu_measured);
         let me = third
             .processes
@@ -156,7 +175,7 @@ mod tests {
     fn process_queries_bypass_the_operation_gate() {
         let session = TinySession::new();
         let _gate = session.begin().unwrap();
-        assert!(!session.process_list().processes.is_empty());
+        assert!(!session.process_list().unwrap().processes.is_empty());
     }
 
     fn sysinfo_interval() -> std::time::Duration {

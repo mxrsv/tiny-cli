@@ -9,3 +9,7 @@
 /src-tauri/target
 *.tsbuildinfo
 /src-tauri/gen
+
+/macos/.build/
+/macos/Generated/
+/macos/Sources/TinyEngine/tiny_ffi.swift

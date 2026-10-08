@@ -1,8 +1,9 @@
 # tiny-cli
 
 A local macOS desktop app and Rust CLI for everyday performance and productivity.
-The desktop uses Tauri 2 + React 19; its engine is shared with the `tiny` CLI.
-All filesystem operations stay on your machine.
+The [native SwiftUI development app](macos/Sources/Tiny/TinyApp.swift) reads local
+processes through the shared Rust engine. The earlier Tauri 2 + React 19 desktop
+remains a separate reference surface. All filesystem operations stay on your machine.
 
 ## Goals
 
@@ -12,7 +13,69 @@ All filesystem operations stay on your machine.
 
 ## Build & Run
 
-### macOS desktop
+### Native SwiftUI development app
+
+Requirements: Apple Silicon Mac, macOS 14+, Swift 6, Rust stable and Xcode
+Command Line Tools. No Node.js, dev server or separate CLI installation is needed
+for the [statically linked native app](macos/Package.swift).
+
+```bash
+scripts/build-native-app.sh
+open "macos/.build/Tiny Dev.app"
+```
+
+The [builder](scripts/build-native-app.sh) creates and verifies an ad-hoc signed
+`Tiny Dev.app` with bundle ID `com.mxrsv.tiny.dev`, separate from the existing
+`Tiny.app`. It does not install the app or change permissions. Optional installation:
+copy `macos/.build/Tiny Dev.app` into `/Applications`.
+
+The [Apps & activity screen](macos/Sources/Tiny/ProcessesView.swift) shows two
+whole-machine widgets: CPU utilization across all cores (0–100%) and system RAM
+used/total with a percentage. These come from the retained
+[system sampler](crates/tiny-core/src/processes/snapshot.rs), not summed process
+CPU or memory. Warm-up, unavailable, paused and stale values are explicit.
+
+The [app grouping model](macos/Sources/Tiny/AppGroups.swift) combines processes
+by outer app bundle and bounded same-owner ancestry; independent child apps stay
+separate. [AppKit metadata](macos/Sources/Tiny/AppCatalog.swift) supplies local
+icons, with a native fallback and no network lookup. App rows show member count,
+per-core CPU (which may exceed 100%) and summed resident memory. Partial totals
+are labelled; resident sums may count shared pages more than once and are not
+whole-machine RAM usage. Unresolved processes remain under **System & Background**,
+collapsed by default and included when searching.
+
+Search matches app names or member name/PID/owner; sort uses app CPU, resident
+memory or name. Select an app, then a member in the
+[inspector](macos/Sources/Tiny/ProcessDetailView.swift), to see its parent,
+children and listening TCP ports. Automatic refresh runs every two seconds;
+pause and manual refresh remain available. This slice is read-only: it has no
+process termination, cleanup or permission-changing controls.
+
+The [engine](macos/Sources/TinyEngine/Engine.swift) preserves unavailable values
+and spaces samples for CPU warm-up. Other-user/system processes may not expose
+memory, CPU or ports. The [state model](macos/Sources/Tiny/AppState.swift) retains
+last-good data with a stale indicator on failure and preserves app selection
+across member churn. Member details use PID plus start time, reject obsolete
+responses, and revalidate identity after the port probe. Start time has one-second
+precision in the [shared sampler](crates/tiny-core/src/processes/snapshot.rs).
+
+Native validation and optional in-process rendering of real data:
+
+```bash
+scripts/test-native.sh
+"macos/.build/Tiny Dev.app/Contents/MacOS/Tiny" --smoke-test
+"macos/.build/Tiny Dev.app/Contents/MacOS/Tiny" --snapshot /tmp/tiny-processes.png
+```
+
+[Native checks](scripts/test-native.sh) compile the actual state/engine sources
+with stdlib-only checks; CLT-only installations lack XCTest and Swift Testing,
+so `swift test` is not the native test entrypoint. The
+[smoke test](macos/Sources/Tiny/TinyApp.swift) creates and terminates only its own
+temporary `sleep` child and verifies its appearance/disappearance. Snapshot mode
+renders the app's own view without Screen Recording permission. Automated checks
+do not replace interactive visual acceptance.
+
+### macOS desktop (Tauri reference)
 
 Requirements: macOS 13+, Node.js 22+, Rust stable, Xcode Command Line Tools
 (`xcode-select --install`).

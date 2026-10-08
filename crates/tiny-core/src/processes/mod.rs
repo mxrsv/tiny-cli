@@ -132,6 +132,7 @@ mod tests {
             processes,
             sampled_at: 0,
             cpu_measured: true,
+            system_usage: Default::default(),
         }
     }
 
