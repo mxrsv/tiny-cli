@@ -25,16 +25,6 @@ struct ActionNotice: Equatable {
     let text: String
 }
 
-/// Persisted before each mutation and cleared on any return. One left behind at
-/// launch means Tiny stopped mid-action, so the outcome is unknown.
-struct InFlightMarker {
-    static let key = "inFlightAction"
-    let defaults: UserDefaults
-    var pending: String? { defaults.string(forKey: Self.key) }
-    func begin(_ summary: String) { defaults.set(summary, forKey: Self.key) }
-    func clear() { defaults.removeObject(forKey: Self.key) }
-}
-
 /// User-facing copy for every action, outcome and refusal. Rust decides; Swift explains.
 enum ActionCopy {
     static let busy = ActionNotice(tone: .warning,
@@ -123,8 +113,12 @@ enum ActionCopy {
         ActionNotice(tone: .unknown, text: "Tiny could not confirm the result of: \(summary). Check whether the target is still running before trying again.")
     }
 
-    static func interrupted(_ summary: String) -> ActionNotice {
-        ActionNotice(tone: .unknown, text: "Tiny stopped during: \(summary). Its result is unknown. Check the target before trying again; nothing is repeated automatically.")
+    static func interrupted(_ summaries: [String]) -> ActionNotice {
+        ActionNotice(tone: .unknown, text: "Tiny stopped during: \(summaries.joined(separator: "; ")). Its result is unknown. Check the target before trying again; nothing is repeated automatically.")
+    }
+
+    static func markerFailed(_ summary: String, _ error: any Error) -> ActionNotice {
+        ActionNotice(tone: .failure, text: "\(summary) was not started: Tiny could not record it safely. \(error.localizedDescription)")
     }
 
     static func describe(_ error: any Error) -> String {
@@ -155,12 +149,18 @@ final class ActionState {
     @ObservationIgnored private let terminate: Terminate
     @ObservationIgnored private let quitApp: QuitApp
     @ObservationIgnored private let marker: InFlightMarker
+    /// Markers found at launch; dismissing the notice clears only these.
+    @ObservationIgnored private var interrupted: [UUID] = []
 
     init(terminate: @escaping Terminate, quitApp: @escaping QuitApp, marker: InFlightMarker) {
         self.terminate = terminate
         self.quitApp = quitApp
         self.marker = marker
-        if let interrupted = marker.pending { notice = ActionCopy.interrupted(interrupted) }
+        let leftover = marker.pending
+        if !leftover.isEmpty {
+            interrupted = leftover.map(\.id)
+            notice = ActionCopy.interrupted(leftover.map(\.summary))
+        }
     }
 
     var isRunning: Bool { running != nil }
@@ -175,18 +175,23 @@ final class ActionState {
 
     func dismissNotice() {
         notice = nil
-        if running == nil { marker.clear() }
+        interrupted.forEach(marker.clear)
+        interrupted = []
     }
 
-    /// Only the request currently shown can run, once. The marker is written
-    /// before the call starts so a crash mid-call is detected at next launch.
+    /// Only the request currently shown can run, once. App Quit and process
+    /// actions share `running`. The marker is durable before the call starts, so
+    /// a crash mid-call is detected at next launch; without it nothing is sent.
     @discardableResult
     func confirm(_ request: ActionRequest) -> Task<Void, Never>? {
         guard pending?.id == request.id else { return nil }
         pending = nil
         guard running == nil else { notice = ActionCopy.busy; return nil }
+        do { try marker.begin(request.id, summary: request.summary) } catch {
+            notice = ActionCopy.markerFailed(request.summary, error)
+            return nil
+        }
         running = request
-        marker.begin(request.summary)
         return Task { await perform(request) }
     }
 
@@ -197,7 +202,7 @@ final class ActionState {
 
     private func perform(_ request: ActionRequest) async {
         defer {
-            marker.clear()
+            marker.clear(request.id)
             running = nil
             onFinish()
         }

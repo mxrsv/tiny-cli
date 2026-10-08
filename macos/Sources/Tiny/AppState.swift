@@ -32,10 +32,10 @@ final class AppState {
     @ObservationIgnored private var pendingRefresh = false
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
-    init(engine: Engine = Engine(), defaults: UserDefaults = .standard) {
+    init(engine: Engine = Engine(), markerDirectory: URL = InFlightMarker.defaultDirectory) {
         self.engine = engine
         actions = ActionState(terminate: { try await engine.terminate($0, kind: $1) },
-                              quitApp: { await AppQuit.quit($0) }, marker: InFlightMarker(defaults: defaults))
+                              quitApp: { await AppQuit.quit($0) }, marker: InFlightMarker(directory: markerDirectory))
         actions.onFinish = { [weak self] in self?.requestRefresh() }
     }
 

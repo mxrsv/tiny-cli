@@ -73,19 +73,18 @@ struct TinyNativeApp: App {
     enum SnapshotScene: String { case member, app, notice, minimum }
 
     /// Renders the app's own view with real data. Scenes only select or stage
-    /// copy; nothing is confirmed, and the defaults suite is throwaway.
+    /// copy; nothing is confirmed, and the marker directory is throwaway.
     @MainActor private static func snapshot(to url: URL, scene: SnapshotScene) async throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
-        let suite = "com.mxrsv.tiny.dev.snapshot.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suite) else { throw CocoaError(.fileWriteUnknown) }
-        defer { defaults.removePersistentDomain(forName: suite) }
-        if scene == .notice { InFlightMarker(defaults: defaults).begin("Force Quit “sleep” (PID 4242)") }
+        let markers = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-snapshot-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: markers) }
+        if scene == .notice { try InFlightMarker(directory: markers).begin(UUID(), summary: "Force Quit “sleep” (PID 4242)") }
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/bin/sleep")
         child.arguments = ["60"]
         try child.run()
         defer { if child.isRunning { child.terminate(); child.waitUntilExit() } }
-        let state = AppState(defaults: defaults)
+        let state = AppState(markerDirectory: markers)
         state.requestRefresh()
         await state.waitForRefresh()
         guard state.listError == nil, !state.processes.isEmpty else {

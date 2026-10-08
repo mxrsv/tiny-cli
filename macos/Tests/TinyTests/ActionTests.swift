@@ -50,7 +50,7 @@ import TinyEngine
         actions.request(row, kind: .graceful)
         try check(actions.pending?.target == .process(row, .graceful), "quit opens a confirmation, sends nothing")
         actions.cancel()
-        try check(actions.pending == nil && recorder.calls.isEmpty && marker.pending == nil, "cancel sends nothing")
+        try check(actions.pending == nil && recorder.calls.isEmpty && marker.pending.isEmpty, "cancel sends nothing")
         actions.request(row, kind: .graceful)
         guard let quit = actions.pending else { throw CheckFailure(message: "quit request pending") }
         await actions.confirm(quit)?.value
@@ -87,31 +87,70 @@ import TinyEngine
         try check(second.pending == nil && second.notice == ActionCopy.busy, "request during an action is rejected, not queued")
         await task?.value
         try check(slow.calls.map(\.0.pid) == [6], "only the confirmed action ran")
+        let app = AppQuitTarget(name: "Editor", bundlePath: "/Applications/Editor.app", pid: 40, launchDate: Date())
+        second.request(process(8), kind: .graceful)
+        let quitting = second.pending.flatMap { second.confirm($0) }
+        second.request(app: app)
+        try check(second.pending == nil && second.notice == ActionCopy.busy, "app Quit shares the running guard")
+        await quitting?.value
     }
 
     private static func markerSetClearedAndDetectedAtLaunch() async throws {
         let recorder = Recorder(result: .exited)
         let (actions, marker, cleanup) = makeActions(recorder)
         defer { cleanup() }
-        recorder.onCall = { recorder.markerDuringCall = marker.pending }
+        let other = UUID() // Another tracked operation, e.g. a future cleanup.
+        try marker.begin(other, summary: "Move 3 items to Trash")
+        recorder.onCall = { recorder.markersDuringCall = marker.pending.map(\.summary) }
         actions.request(process(9, name: "worker"), kind: .force)
         await actions.pending.flatMap { actions.confirm($0) }?.value
-        try check(recorder.markerDuringCall?.contains("worker") == true, "marker persisted before the call")
-        try check(marker.pending == nil, "marker cleared on return")
+        try check(recorder.markersDuringCall.contains { $0.contains("worker") }, "marker durable before the call")
+        try check(marker.pending.map(\.id) == [other], "a finished Quit clears only its own marker")
 
         let panic = Recorder(result: .exited, error: CocoaError(.featureUnsupported))
         let (crashed, panicMarker, cleanupPanic) = makeActions(panic)
         defer { cleanupPanic() }
         crashed.request(process(10, name: "worker"), kind: .graceful)
         await crashed.pending.flatMap { crashed.confirm($0) }?.value
-        try check(crashed.notice?.tone == .unknown && panicMarker.pending == nil, "panic is an unknown outcome, marker cleared")
+        try check(crashed.notice?.tone == .unknown && panicMarker.pending.isEmpty, "panic is an unknown outcome, marker cleared")
 
-        panicMarker.begin("Force Quit “worker” (PID 10)")
+        try panicMarker.begin(UUID(), summary: "Force Quit “worker” (PID 10)")
         let relaunched = ActionState(terminate: { _, _ in .exited }, quitApp: { _ in .exited }, marker: panicMarker)
         try check(relaunched.notice?.tone == .unknown && relaunched.notice?.text.contains("PID 10") == true, "marker at launch shows notice")
-        try check(panicMarker.pending != nil, "launch does not clear before the user sees it")
+        try check(panicMarker.pending.count == 1, "launch does not clear before the user sees it")
+        let later = UUID()
+        try panicMarker.begin(later, summary: "a newer action")
         relaunched.dismissNotice()
-        try check(panicMarker.pending == nil && relaunched.notice == nil, "dismiss clears the marker")
+        try check(panicMarker.pending.map(\.id) == [later] && relaunched.notice == nil, "dismiss clears only the launch markers")
+
+        let unwritable = ActionState(terminate: recorder.terminate, quitApp: { _ in .exited },
+                                     marker: InFlightMarker(directory: URL(fileURLWithPath: "/dev/null/markers")))
+        let before = recorder.calls.count
+        unwritable.request(process(11), kind: .graceful)
+        try check(unwritable.pending.flatMap { unwritable.confirm($0) } == nil && recorder.calls.count == before
+                  && unwritable.notice?.tone == .failure && !unwritable.isRunning, "no durable marker, nothing sent")
+        try markerSurvivesAbort()
+    }
+
+    /// A child writes a marker and then aborts; the parent must still find it.
+    private static func markerSurvivesAbort() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-abort-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let child = Process()
+        child.executableURL = Bundle.main.executableURL
+        child.arguments = [markerAbortFlag, directory.path]
+        try child.run()
+        child.waitUntilExit()
+        try check(child.terminationReason == .uncaughtSignal && child.terminationStatus == SIGABRT, "child aborted")
+        try check(InFlightMarker(directory: directory).pending.map(\.summary) == ["abort test"], "marker survives abort()")
+    }
+
+    static let markerAbortFlag = "--marker-then-abort"
+
+    /// Child side of `markerSurvivesAbort`.
+    static func markerThenAbort(_ path: String) -> Never {
+        do { try InFlightMarker(directory: URL(fileURLWithPath: path)).begin(UUID(), summary: "abort test") } catch { exit(2) }
+        abort()
     }
 
     private static func listenersStates() throws {
@@ -170,11 +209,10 @@ import TinyEngine
     private static func appQuitStillRunningNeverEscalates() async throws {
         let recorder = Recorder(result: .exited)
         var quits: [AppQuitTarget] = []
-        let suite = "tiny.native-checks.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-checks-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
         let actions = ActionState(terminate: recorder.terminate, quitApp: { quits.append($0); return .stillRunning },
-                                  marker: InFlightMarker(defaults: defaults))
+                                  marker: InFlightMarker(directory: directory))
         let target = AppQuitTarget(name: "Editor", bundlePath: "/Applications/Editor.app", pid: 40, launchDate: Date())
         actions.request(app: target)
         try check(actions.pending?.title == "Quit “Editor”?" && actions.pending?.isDestructive == false, "app quit confirmation")
@@ -212,11 +250,10 @@ import TinyEngine
     }
 
     private static func makeActions(_ recorder: Recorder) -> (ActionState, InFlightMarker, () -> Void) {
-        let suite = "tiny.native-checks.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        let marker = InFlightMarker(defaults: defaults)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-checks-\(UUID().uuidString)")
+        let marker = InFlightMarker(directory: directory)
         let actions = ActionState(terminate: recorder.terminate, quitApp: { _ in .exited }, marker: marker)
-        return (actions, marker, { defaults.removePersistentDomain(forName: suite) })
+        return (actions, marker, { try? FileManager.default.removeItem(at: directory) })
     }
 
     private static func process(_ pid: UInt32, name: String = "sample", refusal: FfiRefusal? = nil) -> FfiProcessInfo {
@@ -228,7 +265,7 @@ import TinyEngine
 /// Fake `processTerminate`: records every call and never signals anything.
 @MainActor final class Recorder {
     var calls: [(FfiTerminateTarget, FfiTerminateKind)] = []
-    var markerDuringCall: String?
+    var markersDuringCall: [String] = []
     var onCall: () -> Void = {}
     let result: FfiTerminateOutcome
     let error: (any Error)?

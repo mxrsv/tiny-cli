@@ -3,6 +3,8 @@ import TinyEngine
 
 @main @MainActor enum ProcessStateTests {
     static func main() async {
+        let arguments = CommandLine.arguments
+        if arguments.count == 3 && arguments[1] == ActionTests.markerAbortFlag { ActionTests.markerThenAbort(arguments[2]) }
         do {
             try await EngineTests.run()
             try searchAndSortKeepUnavailableLast()
