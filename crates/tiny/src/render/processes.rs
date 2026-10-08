@@ -5,8 +5,8 @@ use anyhow::{bail, Context, Result};
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use serde_json::json;
 use tiny_core::processes::{
-    self, ParentState, ProcessDetail, ProcessInfo, Sampler, TerminateKind, TerminateOutcome,
-    TerminateTarget,
+    self, ParentState, PortOwners, ProcessDetail, ProcessInfo, Sampler, TerminateKind,
+    TerminateOutcome, TerminateTarget,
 };
 use tiny_core::runner::RealRunner;
 
@@ -51,26 +51,7 @@ fn list_port(port: u16, opts: &ProcessesOpts) -> Result<()> {
         .collect();
     processes::sort_processes(&mut listed, opts.sort.into());
     if opts.json {
-        let owners: Vec<_> = found
-            .owners
-            .iter()
-            .map(|owner| {
-                json!({
-                    "pid": owner.pid,
-                    "inSample": owner.process.is_some(),
-                    "actionable": owner.actionable(),
-                    "refusal": owner.refusal,
-                })
-            })
-            .collect();
-        let report = json!({
-            "processes": listed,
-            "sampledAt": found.sampled_at,
-            "cpuMeasured": found.cpu_measured,
-            "port": port,
-            "portOwners": owners,
-            "visibilityCaveat": found.visibility_caveat,
-        });
+        let report = port_report_json(&found, &listed);
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
@@ -90,6 +71,30 @@ fn list_port(port: u16, opts: &ProcessesOpts) -> Result<()> {
     }
     println!("Note: {}", found.visibility_caveat);
     Ok(())
+}
+
+/// The list's JSON shape plus every owner's actionability and the caveat.
+fn port_report_json(found: &PortOwners, listed: &[ProcessInfo]) -> serde_json::Value {
+    let owners: Vec<_> = found
+        .owners
+        .iter()
+        .map(|owner| {
+            json!({
+                "pid": owner.pid,
+                "inSample": owner.process.is_some(),
+                "actionable": owner.actionable(),
+                "refusal": owner.refusal,
+            })
+        })
+        .collect();
+    json!({
+        "processes": listed,
+        "sampledAt": found.sampled_at,
+        "cpuMeasured": found.cpu_measured,
+        "port": found.port,
+        "portOwners": owners,
+        "visibilityCaveat": found.visibility_caveat,
+    })
 }
 
 fn print_sample_line(sampled_at: u64) {
