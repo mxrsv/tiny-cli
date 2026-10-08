@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use tiny_core::processes::{
-    self, Listener, ListenerList, ListeningPort, ParentState, PortOwner, PortOwners, ProcessInfo,
+    self, Listener, Listeners, ListeningPort, ParentState, PortOwner, PortOwners, ProcessInfo,
     ProcessSnapshot, Refusal, TerminateKind, TerminateOutcome, TerminateTarget,
 };
 use tiny_core::runner::RealRunner;
@@ -120,18 +120,23 @@ pub struct FfiPortOwners {
     pub sampled_at: u64,
 }
 
+/// One visible listening socket and its owner.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct FfiListener {
-    pub address: String,
     pub port: u16,
-    pub owner: FfiPortOwner,
+    pub address: String,
+    pub pid: u32,
+    /// `None` when the PID was not in the sample taken after the probe.
+    pub process: Option<FfiProcessInfo>,
+    pub refusal: Option<FfiRefusal>,
+    pub actionable: bool,
 }
 
 /// Never complete: other users' listeners are invisible without root, so
 /// always show `visibility_caveat` with the list.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiListenerList {
-    /// Sorted by port, then address and PID.
+pub struct FfiListeners {
+    /// Sorted by port, then PID, then address.
     pub listeners: Vec<FfiListener>,
     pub visibility_caveat: String,
     pub sampled_at: u64,
@@ -177,7 +182,7 @@ impl TinySession {
     }
 
     /// Read-only: every visible listening TCP socket. Bypasses the gate.
-    pub fn process_listeners(&self) -> Result<FfiListenerList, FfiError> {
+    pub fn process_listeners(&self) -> Result<FfiListeners, FfiError> {
         let found = processes::listeners(&RealRunner, || self.sampler().sample())?;
         Ok(found.into())
     }
@@ -186,15 +191,18 @@ impl TinySession {
 impl From<Listener> for FfiListener {
     fn from(listener: Listener) -> Self {
         Self {
-            address: listener.address,
             port: listener.port,
-            owner: listener.owner.into(),
+            address: listener.address,
+            pid: listener.pid,
+            process: listener.process.map(Into::into),
+            refusal: listener.refusal.map(Into::into),
+            actionable: listener.actionable,
         }
     }
 }
 
-impl From<ListenerList> for FfiListenerList {
-    fn from(found: ListenerList) -> Self {
+impl From<Listeners> for FfiListeners {
+    fn from(found: Listeners) -> Self {
         Self {
             listeners: found.listeners.into_iter().map(Into::into).collect(),
             visibility_caveat: found.visibility_caveat,
@@ -467,8 +475,8 @@ mod tests {
             .iter()
             .find(|l| l.port == port)
             .expect("listener is visible");
-        assert_eq!(mine.owner.pid, child.id());
-        assert!(mine.owner.actionable);
+        assert_eq!(mine.pid, child.id());
+        assert!(mine.actionable);
         assert!(!found.visibility_caveat.is_empty());
     }
 

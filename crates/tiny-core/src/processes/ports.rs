@@ -140,24 +140,26 @@ fn port_owner(pid: u32, snapshot: &ProcessSnapshot) -> PortOwner {
     }
 }
 
-/// Always attached to the listener list: it is never complete.
-pub const LISTENERS_VISIBILITY_CAVEAT: &str =
-    "Only listeners visible to the current user are shown. \
-Without root, lsof cannot see other users' sockets, so this list is not complete.";
-
+/// One visible listening socket and its owner, flattened for the Ports view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Listener {
-    pub address: String,
     pub port: u16,
-    pub owner: PortOwner,
+    pub address: String,
+    pub pid: u32,
+    /// `None` when the PID was not in the sample taken after the probe.
+    pub process: Option<ProcessInfo>,
+    pub refusal: Option<Refusal>,
+    /// In the sample and not refused, so Quit/Force Quit may be offered.
+    pub actionable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ListenerList {
-    /// Sorted by port, then address and PID; one entry per socket address.
+pub struct Listeners {
+    /// Sorted by port, then PID, then address; one entry per socket address.
     pub listeners: Vec<Listener>,
+    /// `PORT_VISIBILITY_CAVEAT`: the list is never complete.
     pub visibility_caveat: String,
     pub sampled_at: u64,
 }
@@ -167,25 +169,31 @@ pub struct ListenerList {
 pub fn listeners(
     runner: &dyn CommandRunner,
     sample: impl FnOnce() -> ProcessSnapshot,
-) -> Result<ListenerList> {
+) -> Result<Listeners> {
     let stdout = run_lsof(&["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"], runner)
         .map_err(|detail| Error::Operation(format!("listener lookup failed: {detail}")))?;
     let mut entries = parse_lsof(&stdout.unwrap_or_default());
     entries.sort_by(|(a_pid, a), (b_pid, b)| {
-        (a.port, &a.address, a_pid).cmp(&(b.port, &b.address, b_pid))
+        (a.port, a_pid, &a.address).cmp(&(b.port, b_pid, &b.address))
     });
     let snapshot = sample();
     let listeners = entries
         .into_iter()
-        .map(|(pid, socket)| Listener {
-            address: socket.address,
-            port: socket.port,
-            owner: port_owner(pid, &snapshot),
+        .map(|(pid, socket)| {
+            let owner = port_owner(pid, &snapshot);
+            Listener {
+                port: socket.port,
+                address: socket.address,
+                actionable: owner.actionable(),
+                pid,
+                process: owner.process,
+                refusal: owner.refusal,
+            }
         })
         .collect();
-    Ok(ListenerList {
+    Ok(Listeners {
         listeners,
-        visibility_caveat: LISTENERS_VISIBILITY_CAVEAT.to_string(),
+        visibility_caveat: PORT_VISIBILITY_CAVEAT.to_string(),
         sampled_at: snapshot.sampled_at,
     })
 }
@@ -377,47 +385,49 @@ mod tests {
 
     fn listeners_with(
         result: std::result::Result<CommandOutcome, CommandError>,
-    ) -> Result<ListenerList> {
+    ) -> Result<Listeners> {
         let runner = MockRunner::new().with_output(LSOF, &LISTENER_ARGS, result);
         listeners(&runner, sample)
     }
 
     #[test]
-    fn listeners_are_sorted_by_port_deduped_and_keep_unsampled_owners() {
-        let stdout = "p4200\nf4\nn*:8080\np4100\nf5\nn127.0.0.1:5173\nf6\nn127.0.0.1:5173\nf7\nn[::1]:3000\np4300\nf3\nn*:3000\n";
+    fn listeners_are_sorted_deduped_and_keep_unsampled_owners() {
+        // 4100 listens on IPv4 and IPv6 for 5173 (with a duplicate fd), and on 3000.
+        let stdout = "p4200\nf4\nn*:8080\n\
+            p4100\nf5\nn127.0.0.1:5173\nf6\nn[::1]:5173\nf7\nn127.0.0.1:5173\nf8\nn*:3000\n\
+            p4300\nf3\nn*:3000\n";
         let found = listeners_with(Ok(outcome(0, stdout, ""))).unwrap();
         let summary: Vec<_> = found
             .listeners
             .iter()
-            .map(|l| {
-                (
-                    l.port,
-                    l.address.as_str(),
-                    l.owner.pid,
-                    l.owner.actionable(),
-                )
-            })
+            .map(|l| (l.port, l.pid, l.address.as_str(), l.actionable))
             .collect();
         assert_eq!(
             summary,
             vec![
-                (3000, "*", 4300, false),
-                (3000, "[::1]", 4100, true),
-                (5173, "127.0.0.1", 4100, true),
-                (8080, "*", 4200, false),
+                (3000, 4100, "*", true),
+                (3000, 4300, "*", false),
+                (5173, 4100, "127.0.0.1", true),
+                (5173, 4100, "[::1]", true),
+                (8080, 4200, "*", false),
             ]
         );
-        assert_eq!(found.listeners[3].owner.refusal, Some(Refusal::OtherUser));
-        assert_eq!(found.listeners[0].owner.process, None);
+        assert_eq!(found.listeners[1].process, None);
+        assert_eq!(found.listeners[1].refusal, None);
+        assert_eq!(found.listeners[4].refusal, Some(Refusal::OtherUser));
+        assert_eq!(
+            found.listeners[0].process.as_ref().map(|p| p.pid),
+            Some(4100)
+        );
         assert_eq!(found.sampled_at, 7);
-        assert!(found.visibility_caveat.contains("not complete"));
+        assert_eq!(found.visibility_caveat, PORT_VISIBILITY_CAVEAT);
     }
 
     #[test]
     fn no_visible_listener_still_carries_the_caveat() {
         let found = listeners_with(Ok(outcome(1, "", ""))).unwrap();
         assert!(found.listeners.is_empty());
-        assert_eq!(found.visibility_caveat, LISTENERS_VISIBILITY_CAVEAT);
+        assert_eq!(found.visibility_caveat, PORT_VISIBILITY_CAVEAT);
     }
 
     #[test]
