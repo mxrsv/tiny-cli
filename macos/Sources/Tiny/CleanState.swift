@@ -109,11 +109,13 @@ final class CleanState {
 
     @discardableResult
     func scan() -> Task<Void, Never>? {
-        guard !isBusy else { return nil }
+        guard !isBusy, !reviewing else { return nil }
         let id = start(.scanning)
         discovery = nil
         selection = []
         report = nil
+        invalidatePreview()
+        previewFailedFor = nil
         guard let token else { return nil }
         let relay = relay(for: id)
         return Task {
@@ -210,6 +212,7 @@ final class CleanState {
     func finishConfirmation(_ confirmed: Bool, previewId: String) -> Task<Void, Never>? {
         guard pendingConfirmation == previewId else { return nil }
         pendingConfirmation = nil
+        guard phase == .ready else { return nil }
         guard confirmed, let preview, preview.previewId == previewId else { return nil }
         if let expires = previewExpiresAt, now() >= expires {
             requireRescan(CleanCopy.expired)
@@ -289,6 +292,7 @@ final class CleanState {
     private func invalidatePreview() {
         preview = nil
         previewExpiresAt = nil
+        pendingConfirmation = nil
         if error?.needsRescan == false { error = nil }
     }
 

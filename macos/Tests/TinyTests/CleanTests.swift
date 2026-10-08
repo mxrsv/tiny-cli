@@ -10,10 +10,11 @@ import TinyEngine
         try await errorStatesRequireRescan()
         try await previewErrorsShowAndDoNotRepeat()
         try await executeRefusalsShowInSheet()
+        try await rescanOrSelectionChangeVoidsConfirmation()
         try await markerAroundExecute()
         try await progressOwnership()
         try await realDiscoveryIsReadOnlyAndScoped()
-        print("PASS: 9 clean checks (selection, confirm/execute once, report, errors, preview errors, refusals, marker, progress, real discovery)")
+        print("PASS: 10 clean checks (selection, confirm/execute once, report, errors, preview errors, refusals, stale confirmation, marker, progress, real discovery)")
     }
 
     private static func selectionRules() async throws {
@@ -181,6 +182,30 @@ import TinyEngine
         clean.confirmationUnavailable(preview.previewId)
         try check(clean.error?.message == ActionCopy.confirmationUnavailable.text && clean.pendingConfirmation == nil,
                   "no window for the confirmation is shown in the sheet")
+        let executed = await engine.executed
+        try check(executed.isEmpty, "nothing executed")
+    }
+
+    /// L1: a rescan or a selection change voids an open confirmation.
+    private static func rescanOrSelectionChangeVoidsConfirmation() async throws {
+        let (clean, engine, _, cleanup) = make()
+        defer { cleanup() }
+        await clean.scan()?.value
+        await clean.requestPreview()?.value
+        guard let first = clean.preview, clean.requestMove() != nil else { throw CheckFailure(message: "preview") }
+        clean.toggle(candidate: "review-1")
+        try check(clean.preview == nil && clean.pendingConfirmation == nil, "a selection change drops the preview")
+        try check(clean.finishConfirmation(true, previewId: first.previewId) == nil, "selection changed between confirm and execute")
+        clean.toggle(candidate: "review-1")
+        await clean.requestPreview()?.value
+        guard let second = clean.preview, clean.requestMove() != nil else { throw CheckFailure(message: "preview again") }
+        clean.reviewing = true
+        try check(clean.scan() == nil, "no rescan while the review sheet is open")
+        clean.reviewing = false
+        let rescan = clean.scan()
+        try check(clean.preview == nil && clean.pendingConfirmation == nil, "rescanning drops the preview and the confirmation")
+        try check(clean.finishConfirmation(true, previewId: second.previewId) == nil, "an old confirmation cannot run after a rescan")
+        await rescan?.value
         let executed = await engine.executed
         try check(executed.isEmpty, "nothing executed")
     }

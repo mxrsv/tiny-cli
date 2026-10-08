@@ -73,7 +73,8 @@ struct Dock: View {
         } else {
             Button { clean.scan() } label: {
                 Label(clean.discovery == nil ? "Scan" : "Scan Again", systemImage: "magnifyingglass")
-            }.keyboardShortcut("r", modifiers: .command)
+            }.keyboardShortcut("r", modifiers: .command).disabled(clean.reviewing)
+                .help(clean.reviewing ? "Close the review first" : "Scan cleanup categories again")
         }
     }
 }
