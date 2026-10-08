@@ -119,6 +119,17 @@ pub struct FfiPreviewItem {
     pub path: String,
     pub size_bytes: u64,
     pub risk: FfiRisk,
+    /// Other discovered candidates at this path or inside it, selected or
+    /// not, sorted by path. Moving this item moves them too.
+    pub covers: Vec<FfiCoveredCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiCoveredCandidate {
+    pub candidate_id: String,
+    pub path: String,
+    pub risk: FfiRisk,
+    pub selected: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]

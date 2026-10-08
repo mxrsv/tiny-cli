@@ -60,7 +60,25 @@ final class CleanState {
     var selectedCandidates: [FfiCleanCandidate] {
         categories.flatMap(\.candidates).filter { selection.contains($0.id) }
     }
-    var selectedBytes: UInt64 { selectedCandidates.reduce(0) { $0.saturatingAdd($1.sizeBytes) } }
+    /// Selected items with duplicates and paths inside another selected item
+    /// removed, so overlaps are counted once (as Rust's preview does).
+    var effectiveSelection: [FfiCleanCandidate] {
+        var kept: [FfiCleanCandidate] = []
+        for candidate in selectedCandidates.sorted(by: { $0.path < $1.path }) {
+            if let last = kept.last, Self.contains(last.path, candidate.path) { continue }
+            kept.append(candidate)
+        }
+        return kept
+    }
+    var selectedBytes: UInt64 { effectiveSelection.reduce(0) { $0.saturatingAdd($1.sizeBytes) } }
+    /// Candidate ID → path of the preview item that moves it along.
+    var coveredBy: [String: String] {
+        var map: [String: String] = [:]
+        for item in preview?.items ?? [] {
+            for covered in item.covers { map[covered.candidateId] = item.path }
+        }
+        return map
+    }
     var canReview: Bool { phase == .ready && !selection.isEmpty && error?.needsRescan != true }
 
     static func isSelectable(_ category: FfiCleanCategory) -> Bool {
@@ -79,7 +97,7 @@ final class CleanState {
     }
 
     /// Whether moving `ancestor` moves `path`: the same path or one inside it.
-    static func contains(_ ancestor: String, _ path: String) -> Bool {
+    nonisolated static func contains(_ ancestor: String, _ path: String) -> Bool {
         path == ancestor || path.hasPrefix(ancestor.hasSuffix("/") ? ancestor : ancestor + "/")
     }
 

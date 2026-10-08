@@ -35,20 +35,28 @@ struct CleanReviewSheet: View {
         .frame(width: 680, height: 600)
     }
 
-    /// Categories with at least one selected item; their other items stay listed unchecked.
+    /// Categories with a selected item or an item that moves with one; their
+    /// other items stay listed unchecked.
     private var reviewedCategories: [FfiCleanCategory] {
-        clean.categories.filter { category in
-            CleanState.isSelectable(category) && category.candidates.contains { clean.selection.contains($0.id) }
+        let covered = clean.coveredBy
+        return clean.categories.filter { category in
+            category.candidates.contains { clean.selection.contains($0.id) || covered[$0.id] != nil }
         }
     }
 
     private func row(_ candidate: FfiCleanCandidate) -> some View {
-        HStack(spacing: 10) {
-            Toggle(candidate.path, isOn: Binding(get: { clean.selection.contains(candidate.id) },
+        let parent = clean.coveredBy[candidate.id]
+        return HStack(spacing: 10) {
+            Toggle(candidate.path, isOn: Binding(get: { parent != nil || clean.selection.contains(candidate.id) },
                                                  set: { _ in clean.toggle(candidate: candidate.id) }))
-                .toggleStyle(.checkbox).labelsHidden()
-            Text(candidate.path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                .help(candidate.path)
+                .toggleStyle(.checkbox).labelsHidden().disabled(parent != nil)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(candidate.path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                    .help(candidate.path)
+                if let parent {
+                    Text(CleanCopy.movesWith(parent)).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if candidate.risk != .safe { Pill(text: "REVIEW", tint: .orange) }
             Spacer(minLength: 8)
             Text((candidate.unreadableEntries > 0 ? "≥ " : "") + CleanCopy.bytes(candidate.sizeBytes))
@@ -67,18 +75,18 @@ struct CleanReviewSheet: View {
                     Text("This review expires at \(expires.formatted(date: .omitted, time: .shortened)); after that, scan again.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if !preview.excluded.isEmpty {
-                    Text("\(preview.excluded.count) more \(preview.excluded.count == 1 ? "path is" : "paths are") not listed separately:")
-                        .font(.caption).foregroundStyle(.secondary)
-                    ForEach(preview.excluded.prefix(Self.excludedShown), id: \.candidateId) { excluded in
-                        Label("\(excluded.path): \(CleanCopy.exclusion(excluded.reason))", systemImage: "arrow.turn.down.right")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                            .help(excluded.path)
-                    }
-                    if preview.excluded.count > Self.excludedShown {
-                        Text("and \(preview.excluded.count - Self.excludedShown) more inside selected folders or duplicated.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                ForEach(preview.excluded.filter(\.blocksReview).prefix(Self.excludedShown), id: \.candidateId) { excluded in
+                    Label("\(excluded.path): \(CleanCopy.exclusion(excluded.reason))", systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange).lineLimit(2).truncationMode(.middle).help(excluded.path)
+                }
+                let blocked = preview.excluded.filter(\.blocksReview).count
+                if blocked > Self.excludedShown {
+                    Text("\(blocked - Self.excludedShown) more folders are not moved because they contain unselected review items.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                let merged = preview.excluded.count - blocked
+                if merged > 0 {
+                    Text(CleanCopy.merged(merged)).font(.caption).foregroundStyle(.secondary)
                 }
             } else {
                 HStack {

@@ -965,3 +965,39 @@ fn execute_refuses_a_preview_that_would_move_an_unselected_review_item() {
     assert!(dir.join("Logs/JetBrains/Product").exists());
     remove(&dir);
 }
+
+#[test]
+fn a_preview_item_lists_every_candidate_it_moves_with_selection() {
+    let dir = review_fixture("covers");
+    let mut inner = Fixture::new("inner", &dir.join("Logs/JetBrains"));
+    inner.risk = RiskLevel::Safe;
+    let providers: Vec<Box<dyn CleanProvider>> = vec![
+        Box::new(Fixture::new("logs", &dir.join("Logs"))),
+        Box::new(inner),
+    ];
+    let session = TinySession::new();
+    let discovery = discover(&session, &providers).unwrap();
+    // Tick the parent, untick its child: the child still moves with the parent.
+    let preview = session
+        .clean_preview(candidate_ids(&discovery, "logs"))
+        .unwrap();
+    let parent = preview
+        .items
+        .iter()
+        .find(|i| i.path.ends_with("JetBrains"))
+        .unwrap();
+    let child = &candidate_ids(&discovery, "inner")[0];
+    assert_eq!(
+        parent.covers,
+        vec![FfiCoveredCandidate {
+            candidate_id: child.clone(),
+            path: dir
+                .join("Logs/JetBrains/Product")
+                .to_string_lossy()
+                .into_owned(),
+            risk: FfiRisk::Safe,
+            selected: false,
+        }]
+    );
+    remove(&dir);
+}

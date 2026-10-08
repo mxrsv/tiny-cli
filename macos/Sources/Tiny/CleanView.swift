@@ -54,7 +54,7 @@ struct CleanView: View {
     private var selectionBar: some View {
         HStack(spacing: 12) {
             Image(systemName: "trash").foregroundStyle(Theme.accent)
-            Text("\(CleanCopy.items(clean.selection.count)) selected · \(CleanCopy.bytes(clean.selectedBytes)) measured at scan")
+            Text("\(CleanCopy.items(clean.effectiveSelection.count)) selected · \(CleanCopy.bytes(clean.selectedBytes)) measured at scan")
                 .monospacedDigit()
             Text("Review-risk items are never selected for you.").font(.caption).foregroundStyle(.secondary)
             Spacer()

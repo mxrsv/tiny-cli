@@ -151,13 +151,14 @@ impl TinySession {
                 .into_iter()
                 .map(|((id, plan), overlap)| exclusion(&kept, id, &plan, overlap)),
         );
+        let items = kept
+            .iter()
+            .map(|(id, plan)| preview_item(discovery, &selected, id, plan))
+            .collect();
         let preview_id = format!("p{}", state.next_id());
         let preview = FfiPreview {
             preview_id: preview_id.clone(),
-            items: kept
-                .iter()
-                .map(|(id, plan)| preview_item(id, plan))
-                .collect(),
+            items,
             excluded,
             bytes_selected: total_size(kept.iter().map(|(_, plan)| &plan.item)),
             expires_in_seconds: ttl.as_secs(),
@@ -522,13 +523,33 @@ fn exclusion(
     }
 }
 
-fn preview_item(id: &str, plan: &PlannedItem) -> FfiPreviewItem {
+fn preview_item(
+    discovery: &StoredDiscovery,
+    selected: &BTreeSet<String>,
+    id: &str,
+    plan: &PlannedItem,
+) -> FfiPreviewItem {
+    let mut covers: Vec<FfiCoveredCandidate> = discovery
+        .candidates
+        .iter()
+        .filter(|(other, candidate)| {
+            *other != id && candidate.item.path.starts_with(&plan.item.path)
+        })
+        .map(|(other, candidate)| FfiCoveredCandidate {
+            candidate_id: other.clone(),
+            path: candidate.item.path.to_string_lossy().into_owned(),
+            risk: candidate.item.risk.into(),
+            selected: selected.contains(other),
+        })
+        .collect();
+    covers.sort_by(|a, b| (&a.path, &a.candidate_id).cmp(&(&b.path, &b.candidate_id)));
     FfiPreviewItem {
         candidate_id: id.to_string(),
         category_id: plan.item.category_id.clone(),
         path: plan.item.path.to_string_lossy().into_owned(),
         size_bytes: plan.item.size,
         risk: plan.item.risk.into(),
+        covers,
     }
 }
 

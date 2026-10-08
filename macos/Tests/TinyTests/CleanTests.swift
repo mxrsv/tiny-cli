@@ -33,6 +33,23 @@ import TinyEngine
         clean.toggle(candidate: "review-2")
         try check(!clean.selection.contains("review-2"), "per-path exclusion")
         try check(!CleanState.isSelectable(category("report", desktop: .reportOnly(reason: .notPerPathTrash))), "report-only rule")
+        try await untickedChildMovesWithTickedParent()
+    }
+
+    /// M1: a child under a ticked parent cannot be kept by unticking it; counts are deduplicated.
+    private static func untickedChildMovesWithTickedParent() async throws {
+        let (clean, _, _, cleanup) = make()
+        defer { cleanup() }
+        await clean.scan()?.value
+        clean.toggle(candidate: "safe-parent")
+        try check(clean.selection.contains("safe-1") && clean.effectiveSelection.map(\.id) == ["safe-parent"],
+                  "a parent and its selected child count once")
+        clean.toggle(candidate: "safe-1")
+        await clean.requestPreview()?.value
+        while clean.previewLoading { await Task.yield() }
+        try check(clean.coveredBy["safe-1"] == "/Users/alice/Library/Caches", "an unticked child is shown as moving with its parent")
+        try check(clean.preview?.items.first?.covers.first { $0.candidateId == "safe-1" }?.selected == false, "Rust reports it unselected")
+        try check(CleanCopy.movesWith("/Users/alice/Library/Caches").hasPrefix("Moves with Caches"), "moves-with copy")
     }
 
     private static func previewConfirmExecuteRunsOnce() async throws {
@@ -216,7 +233,14 @@ actor FakeCleanEngine: CleanEngine {
     }
 
     func cleanPreview(_ candidateIds: [String]) async throws -> FfiPreview {
-        let items = candidateIds.map { FfiPreviewItem(candidateId: $0, categoryId: "safe", path: "/tmp/\($0)", sizeBytes: 100, risk: .safe) }
+        let all = try await cleanDiscover(CleanState.options, token: CancellationToken(), progress: ProgressRelay { _ in })
+            .categories.flatMap(\.candidates)
+        let items = candidateIds.compactMap { id in all.first { $0.id == id } }.map { item in
+            FfiPreviewItem(candidateId: item.id, categoryId: "safe", path: item.path, sizeBytes: item.sizeBytes, risk: item.risk,
+                           covers: all.filter { $0.id != item.id && CleanState.contains(item.path, $0.path) }.map {
+                               FfiCoveredCandidate(candidateId: $0.id, path: $0.path, risk: $0.risk, selected: candidateIds.contains($0.id))
+                           })
+        }
         return FfiPreview(previewId: "p\(candidateIds.count)", items: items, excluded: [],
                           bytesSelected: UInt64(items.count) * 100, expiresInSeconds: 900)
     }

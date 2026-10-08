@@ -54,6 +54,14 @@ enum CleanCopy {
             confirmLabel: "Move to Trash", isDestructive: false)
     }
 
+    static func movesWith(_ parent: String) -> String {
+        "Moves with \(URL(fileURLWithPath: parent).lastPathComponent). Untick that folder to keep this one."
+    }
+
+    static func merged(_ count: Int) -> String {
+        "\(count) selected \(count == 1 ? "path is" : "paths are") the same as, or inside, another selected item; each moves once and is counted once."
+    }
+
     static func exclusion(_ reason: FfiExclusionReason) -> String {
         switch reason {
         case .duplicate: return "Same path as another selected item; moved once."
@@ -131,6 +139,14 @@ enum CleanCopy {
         case .appRunning: return "Skipped: its app is running"
         case .safetyCheckUnavailable: return "Skipped: a safety check could not run"
         }
+    }
+}
+
+extension FfiPreviewExclusion {
+    /// Left out because it would carry unselected review items (PC-C3).
+    var blocksReview: Bool {
+        if case .coversUnselectedReview = reason { return true }
+        return false
     }
 }
 
