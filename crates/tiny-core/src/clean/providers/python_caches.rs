@@ -4,6 +4,7 @@ use crate::error::Result;
 
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
 use crate::clean::fs_safe::{dir_size_safe, walk_with};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "python-caches";
@@ -73,7 +74,7 @@ impl CleanProvider for PythonCaches {
 /// check NOT required — pycache is always safe to delete.
 pub fn find_pycache(root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
-    walk_with(root, |path, meta| {
+    walk_with(root, &ScanContext::unchecked(), |path, meta| {
         if !meta.file_type().is_dir() {
             return false;
         }
@@ -91,7 +92,7 @@ pub fn find_pycache(root: &Path) -> Vec<PathBuf> {
 /// the manifest is idle.
 pub fn find_orphan_venv(root: &Path, idle_days: u64) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
-    walk_with(root, |path, meta| {
+    walk_with(root, &ScanContext::unchecked(), |path, meta| {
         if !meta.file_type().is_dir() {
             return false;
         }
