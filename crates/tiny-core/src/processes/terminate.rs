@@ -178,10 +178,14 @@ fn send_signal(pid: u32, kind: TerminateKind) -> Result<Option<TerminateOutcome>
     if unsafe { libc::kill(pid, kind.signal()) } == 0 {
         return Ok(None);
     }
-    let error = std::io::Error::last_os_error();
+    signal_failure(pid, std::io::Error::last_os_error()).map(Some)
+}
+
+/// Maps a failed `kill` to its outcome; only unexpected errnos are errors.
+fn signal_failure(pid: libc::pid_t, error: std::io::Error) -> Result<TerminateOutcome> {
     match error.raw_os_error() {
-        Some(libc::ESRCH) => Ok(Some(TerminateOutcome::AlreadyExited)),
-        Some(libc::EPERM) => Ok(Some(TerminateOutcome::PermissionDenied)),
+        Some(libc::ESRCH) => Ok(TerminateOutcome::AlreadyExited),
+        Some(libc::EPERM) => Ok(TerminateOutcome::PermissionDenied),
         _ => Err(Error::Operation(format!("kill({pid}) failed: {error}"))),
     }
 }
@@ -257,6 +261,21 @@ mod tests {
         }
         assert_eq!(signalable_pid(2), Some(2));
         assert_eq!(signalable_pid(i32::MAX as u32), Some(i32::MAX));
+    }
+
+    #[test]
+    fn kill_errnos_map_to_outcomes() {
+        let errno = std::io::Error::from_raw_os_error;
+        assert_eq!(
+            signal_failure(42, errno(libc::ESRCH)).unwrap(),
+            TerminateOutcome::AlreadyExited
+        );
+        assert_eq!(
+            signal_failure(42, errno(libc::EPERM)).unwrap(),
+            TerminateOutcome::PermissionDenied
+        );
+        let other = signal_failure(42, errno(libc::EINVAL));
+        assert!(matches!(other, Err(Error::Operation(d)) if d.contains("kill(42)")));
     }
 
     #[test]
