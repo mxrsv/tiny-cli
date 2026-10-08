@@ -20,7 +20,7 @@ const OSASCRIPT: &str = "/usr/bin/osascript";
 const TRASH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// Apple Events error for "not authorized to send Apple events".
-const AUTOMATION_DENIED: &str = "-1743";
+const AUTOMATION_DENIED: i32 = -1743;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TrashError {
@@ -57,8 +57,15 @@ impl Trash for FinderTrash {
     }
 }
 
+/// The AppleScript error number `osascript` ends its message with, as in
+/// "execution error: Not authorized to send Apple events to Finder. (-1743)".
+fn error_code(stderr: &str) -> Option<i32> {
+    let inner = stderr.trim_end().strip_suffix(')')?;
+    inner[inner.rfind('(')? + 1..].parse().ok()
+}
+
 fn classify_failure(stderr: &str) -> TrashError {
-    if stderr.contains(AUTOMATION_DENIED) {
+    if error_code(stderr) == Some(AUTOMATION_DENIED) {
         TrashError::AutomationDenied(stderr.to_string())
     } else {
         TrashError::Failed(stderr.to_string())
@@ -78,5 +85,10 @@ mod tests {
         ));
         let missing = "execution error: Finder got an error: Can’t get alias. (-1728)";
         assert!(matches!(classify_failure(missing), TrashError::Failed(_)));
+        // A path that merely contains "-1743" is not a denial.
+        let in_path =
+            "execution error: Can’t get alias \"/Users/me/build-1743 (-1743) copy\". (-1728)";
+        assert!(matches!(classify_failure(in_path), TrashError::Failed(_)));
+        assert!(matches!(classify_failure("no code"), TrashError::Failed(_)));
     }
 }
