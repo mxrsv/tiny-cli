@@ -1,7 +1,12 @@
-//! Read-only process queries exported to Swift. Mirror records keep
+//! Process queries and actions exported to Swift. Mirror records keep
 //! `tiny-core` types off the boundary.
 
-use tiny_core::processes::{self, ListeningPort, ParentState, ProcessInfo, ProcessSnapshot};
+use std::path::PathBuf;
+
+use tiny_core::processes::{
+    self, ListeningPort, ParentState, PortOwner, PortOwners, ProcessInfo, ProcessSnapshot, Refusal,
+    TerminateKind, TerminateOutcome, TerminateTarget,
+};
 use tiny_core::runner::RealRunner;
 
 use crate::{FfiError, TinySession};
@@ -59,6 +64,62 @@ pub struct FfiProcessDetail {
     pub ports_error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiTerminateKind {
+    /// SIGTERM.
+    Graceful,
+    /// SIGKILL; confirmed separately in the UI.
+    Force,
+}
+
+/// The process as the user saw it when confirming. Copy these fields from the
+/// `FfiProcessInfo` shown; `executable_path` is compared only when present.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiTerminateTarget {
+    pub pid: u32,
+    pub start_time: u64,
+    pub name: String,
+    pub executable_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum FfiRefusal {
+    OwnProcess,
+    OwnParent,
+    SystemProcess,
+    OtherUser,
+    Protected { name: String },
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum FfiTerminateOutcome {
+    Exited,
+    StillRunning,
+    AlreadyExited,
+    PermissionDenied,
+    IdentityChanged,
+    Refused { reason: FfiRefusal },
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiPortOwner {
+    pub pid: u32,
+    /// `None` when the PID was not in the sample taken after the probe.
+    pub process: Option<FfiProcessInfo>,
+    pub refusal: Option<FfiRefusal>,
+    /// In the sample and not refused, so Quit/Force Quit may be offered.
+    pub actionable: bool,
+}
+
+/// An empty `owners` list never means the port is free; show `visibility_caveat`.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiPortOwners {
+    pub port: u16,
+    pub owners: Vec<FfiPortOwner>,
+    pub visibility_caveat: String,
+    pub sampled_at: u64,
+}
+
 #[uniffi::export]
 impl TinySession {
     /// Samples all processes. CPU is measured from a process's third sample.
@@ -79,6 +140,93 @@ impl TinySession {
                 .map(|ports| ports.into_iter().map(Into::into).collect()),
             ports_error: detail.ports_error,
         })
+    }
+
+    /// Revalidates the target, then sends one signal. Takes the operation
+    /// gate, so it returns `Busy` while another operation runs.
+    pub fn process_terminate(
+        &self,
+        target: FfiTerminateTarget,
+        kind: FfiTerminateKind,
+    ) -> Result<FfiTerminateOutcome, FfiError> {
+        let _gate = self.begin()?;
+        Ok(processes::terminate(&target.into(), kind.into())?.into())
+    }
+
+    /// Read-only: visible listeners on a TCP port. Bypasses the gate.
+    pub fn process_port_owners(&self, port: u16) -> Result<FfiPortOwners, FfiError> {
+        let owners = processes::port_owners(port, &RealRunner, || self.sampler().sample())?;
+        Ok(owners.into())
+    }
+}
+
+impl From<FfiTerminateTarget> for TerminateTarget {
+    fn from(target: FfiTerminateTarget) -> Self {
+        Self {
+            pid: target.pid,
+            start_time: target.start_time,
+            name: target.name,
+            exe: target.executable_path.map(PathBuf::from),
+        }
+    }
+}
+
+impl From<FfiTerminateKind> for TerminateKind {
+    fn from(kind: FfiTerminateKind) -> Self {
+        match kind {
+            FfiTerminateKind::Graceful => Self::Graceful,
+            FfiTerminateKind::Force => Self::Force,
+        }
+    }
+}
+
+impl From<Refusal> for FfiRefusal {
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::OwnProcess => Self::OwnProcess,
+            Refusal::OwnParent => Self::OwnParent,
+            Refusal::SystemProcess => Self::SystemProcess,
+            Refusal::OtherUser => Self::OtherUser,
+            Refusal::Protected { name } => Self::Protected { name },
+        }
+    }
+}
+
+impl From<TerminateOutcome> for FfiTerminateOutcome {
+    fn from(outcome: TerminateOutcome) -> Self {
+        match outcome {
+            TerminateOutcome::Exited => Self::Exited,
+            TerminateOutcome::StillRunning => Self::StillRunning,
+            TerminateOutcome::AlreadyExited => Self::AlreadyExited,
+            TerminateOutcome::PermissionDenied => Self::PermissionDenied,
+            TerminateOutcome::IdentityChanged => Self::IdentityChanged,
+            TerminateOutcome::Refused(reason) => Self::Refused {
+                reason: reason.into(),
+            },
+        }
+    }
+}
+
+impl From<PortOwner> for FfiPortOwner {
+    fn from(owner: PortOwner) -> Self {
+        let actionable = owner.actionable();
+        Self {
+            pid: owner.pid,
+            process: owner.process.map(Into::into),
+            refusal: owner.refusal.map(Into::into),
+            actionable,
+        }
+    }
+}
+
+impl From<PortOwners> for FfiPortOwners {
+    fn from(found: PortOwners) -> Self {
+        Self {
+            port: found.port,
+            owners: found.owners.into_iter().map(Into::into).collect(),
+            visibility_caveat: found.visibility_caveat,
+            sampled_at: found.sampled_at,
+        }
     }
 }
 
@@ -176,6 +324,76 @@ mod tests {
         let session = TinySession::new();
         let _gate = session.begin().unwrap();
         assert!(!session.process_list().unwrap().processes.is_empty());
+    }
+
+    /// Only disposable children are signalled.
+    fn sleeper(session: &TinySession) -> (std::process::Child, FfiTerminateTarget) {
+        let child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let info = session
+            .process_list()
+            .unwrap()
+            .processes
+            .into_iter()
+            .find(|p| p.pid == child.id())
+            .expect("child is sampled");
+        let target = FfiTerminateTarget {
+            pid: info.pid,
+            start_time: info.start_time,
+            name: info.name,
+            executable_path: info.executable_path,
+        };
+        (child, target)
+    }
+
+    #[test]
+    fn terminate_is_busy_while_the_gate_is_held_then_quits_the_child() {
+        let session = TinySession::new();
+        let (mut child, target) = sleeper(&session);
+        let gate = session.begin().unwrap();
+        let busy = session.process_terminate(target.clone(), FfiTerminateKind::Graceful);
+        let alive_while_busy = child.try_wait().unwrap().is_none();
+        drop(gate);
+        let outcome = session.process_terminate(target, FfiTerminateKind::Graceful);
+        child.kill().ok();
+        child.wait().unwrap();
+        assert!(matches!(busy, Err(FfiError::Busy)));
+        assert!(alive_while_busy);
+        assert_eq!(outcome.unwrap(), FfiTerminateOutcome::Exited);
+        assert!(!session.is_busy());
+    }
+
+    #[test]
+    fn terminate_refusal_crosses_the_boundary_as_a_value() {
+        let session = TinySession::new();
+        let target = FfiTerminateTarget {
+            pid: 1,
+            start_time: 0,
+            name: "launchd".into(),
+            executable_path: None,
+        };
+        assert_eq!(
+            session
+                .process_terminate(target, FfiTerminateKind::Force)
+                .unwrap(),
+            FfiTerminateOutcome::Refused {
+                reason: FfiRefusal::SystemProcess
+            }
+        );
+    }
+
+    #[test]
+    fn port_owners_bypass_the_gate_and_reject_port_zero() {
+        let session = TinySession::new();
+        let _gate = session.begin().unwrap();
+        assert!(matches!(
+            session.process_port_owners(0),
+            Err(FfiError::InvalidInput { .. })
+        ));
+        let found = session.process_port_owners(1).unwrap();
+        assert!(!found.visibility_caveat.is_empty());
     }
 
     fn sysinfo_interval() -> std::time::Duration {
