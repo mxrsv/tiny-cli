@@ -98,6 +98,25 @@ fn quit_sends_sigterm_to_a_disposable_child() {
 }
 
 #[test]
+fn quit_without_yes_and_without_a_tty_signals_nothing() {
+    let mut child = sleeper();
+    let pid = child.0.id().to_string();
+    for extra in [&[][..], &["--force"][..]] {
+        tiny()
+            .args(["processes", "quit", &pid])
+            .args(extra)
+            .env("TINY_CONFIRM_FORCE", "1")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("quit confirm prompt failed"));
+        assert!(
+            child.0.try_wait().unwrap().is_none(),
+            "child must survive {extra:?}"
+        );
+    }
+}
+
+#[test]
 fn force_yes_needs_the_env_then_sends_sigkill() {
     let mut child = sleeper();
     let pid = child.0.id().to_string();
