@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use tiny_core::processes::{
-    self, ListeningPort, ParentState, PortOwner, PortOwners, ProcessInfo, ProcessSnapshot, Refusal,
-    TerminateKind, TerminateOutcome, TerminateTarget,
+    self, Listener, ListenerList, ListeningPort, ParentState, PortOwner, PortOwners, ProcessInfo,
+    ProcessSnapshot, Refusal, TerminateKind, TerminateOutcome, TerminateTarget,
 };
 use tiny_core::runner::RealRunner;
 
@@ -120,6 +120,23 @@ pub struct FfiPortOwners {
     pub sampled_at: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiListener {
+    pub address: String,
+    pub port: u16,
+    pub owner: FfiPortOwner,
+}
+
+/// Never complete: other users' listeners are invisible without root, so
+/// always show `visibility_caveat` with the list.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiListenerList {
+    /// Sorted by port, then address and PID.
+    pub listeners: Vec<FfiListener>,
+    pub visibility_caveat: String,
+    pub sampled_at: u64,
+}
+
 #[uniffi::export]
 impl TinySession {
     /// Samples all processes. CPU is measured from a process's third sample.
@@ -157,6 +174,32 @@ impl TinySession {
     pub fn process_port_owners(&self, port: u16) -> Result<FfiPortOwners, FfiError> {
         let owners = processes::port_owners(port, &RealRunner, || self.sampler().sample())?;
         Ok(owners.into())
+    }
+
+    /// Read-only: every visible listening TCP socket. Bypasses the gate.
+    pub fn process_listeners(&self) -> Result<FfiListenerList, FfiError> {
+        let found = processes::listeners(&RealRunner, || self.sampler().sample())?;
+        Ok(found.into())
+    }
+}
+
+impl From<Listener> for FfiListener {
+    fn from(listener: Listener) -> Self {
+        Self {
+            address: listener.address,
+            port: listener.port,
+            owner: listener.owner.into(),
+        }
+    }
+}
+
+impl From<ListenerList> for FfiListenerList {
+    fn from(found: ListenerList) -> Self {
+        Self {
+            listeners: found.listeners.into_iter().map(Into::into).collect(),
+            visibility_caveat: found.visibility_caveat,
+            sampled_at: found.sampled_at,
+        }
     }
 }
 
@@ -393,6 +436,39 @@ mod tests {
             Err(FfiError::InvalidInput { .. })
         ));
         let found = session.process_port_owners(1).unwrap();
+        assert!(!found.visibility_caveat.is_empty());
+    }
+
+    #[test]
+    fn listeners_include_a_disposable_listener_while_the_gate_is_held() {
+        use std::io::{BufRead, BufReader};
+        let script = "import socket,time\ns=socket.socket()\ns.bind(('127.0.0.1',0))\ns.listen()\nprint(s.getsockname()[1],flush=True)\ntime.sleep(30)";
+        let Ok(mut child) = std::process::Command::new("python3")
+            .args(["-c", script])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+        else {
+            eprintln!("python3 unavailable; listeners are covered by core fixtures only");
+            return;
+        };
+        let mut line = String::new();
+        let read = BufReader::new(child.stdout.take().unwrap()).read_line(&mut line);
+        let session = TinySession::new();
+        let gate = session.begin().unwrap();
+        let found = session.process_listeners();
+        drop(gate);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        read.unwrap();
+        let port: u16 = line.trim().parse().unwrap();
+        let found = found.unwrap();
+        let mine = found
+            .listeners
+            .iter()
+            .find(|l| l.port == port)
+            .expect("listener is visible");
+        assert_eq!(mine.owner.pid, child.id());
+        assert!(mine.owner.actionable);
         assert!(!found.visibility_caveat.is_empty());
     }
 
