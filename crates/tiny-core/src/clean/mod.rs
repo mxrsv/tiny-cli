@@ -5,4 +5,5 @@ pub mod process;
 pub mod providers;
 pub mod runner;
 pub mod scan_context;
+pub mod trash_plan;
 pub mod types;

@@ -6,7 +6,9 @@
 //! `fs::remove_dir_all`.
 
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use super::scan_context::ScanContext;
 
@@ -141,6 +143,53 @@ pub fn list_children(root: &Path, ctx: &ScanContext<'_>) -> Vec<PathBuf> {
         ctx.add_root(root);
     }
     children
+}
+
+/// Identity of a discovered path, compared again right before acting on it.
+/// Device + inode catch replacement; length and mtime catch an edited file.
+/// A directory's contents are not hashed: caches churn, and every cache
+/// preview would otherwise go stale before the user confirms it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathFingerprint {
+    device: u64,
+    inode: u64,
+    kind: FileKind,
+    /// Length and mtime, for regular files only.
+    contents: Option<(u64, Option<SystemTime>)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileKind {
+    File,
+    Dir,
+    Symlink,
+    Other,
+}
+
+impl PathFingerprint {
+    pub fn of(meta: &fs::Metadata) -> Self {
+        let ft = meta.file_type();
+        let kind = if ft.is_symlink() {
+            FileKind::Symlink
+        } else if ft.is_dir() {
+            FileKind::Dir
+        } else if ft.is_file() {
+            FileKind::File
+        } else {
+            FileKind::Other
+        };
+        Self {
+            device: meta.dev(),
+            inode: meta.ino(),
+            kind,
+            contents: (kind == FileKind::File).then(|| (meta.len(), meta.modified().ok())),
+        }
+    }
+}
+
+/// Fingerprint of `path` itself, never of a symlink's target.
+pub fn fingerprint(path: &Path) -> std::io::Result<PathFingerprint> {
+    fs::symlink_metadata(path).map(|meta| PathFingerprint::of(&meta))
 }
 
 /// True iff `path` is a real directory (not a symlink). Replacement for
@@ -394,6 +443,35 @@ mod tests {
         let findings = ctx.take_findings();
         assert!(findings.roots.contains(&dir));
         assert!(findings.unreadable.is_empty());
+        let _ = remove_recursive_safe(&dir);
+    }
+
+    #[test]
+    fn fingerprint_detects_replacement_and_edits_but_not_dir_churn() {
+        let dir = tempdir("fingerprint");
+        let file = dir.join("f");
+        write_file(&file, b"one");
+        let before = fingerprint(&file).unwrap();
+        assert_eq!(fingerprint(&file).unwrap(), before);
+        write_file(&file, b"longer contents");
+        assert_ne!(fingerprint(&file).unwrap(), before, "edited file");
+
+        let sub = dir.join("sub");
+        fs::create_dir(&sub).unwrap();
+        let dir_before = fingerprint(&sub).unwrap();
+        write_file(&sub.join("new"), b"x");
+        assert_eq!(fingerprint(&sub).unwrap(), dir_before, "cache churn");
+        // Created while `sub` still exists, so the inode cannot be reused.
+        let moved = dir.join("other");
+        fs::create_dir(&moved).unwrap();
+        fs::remove_file(sub.join("new")).unwrap();
+        fs::remove_dir(&sub).unwrap();
+        fs::rename(&moved, &sub).unwrap();
+        assert_ne!(fingerprint(&sub).unwrap(), dir_before, "replaced dir");
+
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&sub, &link).unwrap();
+        assert_ne!(fingerprint(&link).unwrap(), fingerprint(&sub).unwrap());
         let _ = remove_recursive_safe(&dir);
     }
 
