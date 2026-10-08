@@ -1,11 +1,10 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::error::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
-use crate::clean::fs_safe::is_dir_safe;
-use crate::clean::process::{PgrepChecker, ProcessChecker};
+use crate::clean::fs_safe::{is_dir_safe, list_children};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "chat-caches";
@@ -24,24 +23,17 @@ const CHAT_PATHS: &[(&str, &str)] = &[
 /// *.ru.keepcoder.Telegram/account-*/postbox/media`. We resolve via
 /// read_dir at discover time. Locked by "Telegram".
 const TELEGRAM_GROUP_CONTAINERS: &str = "Library/Group Containers";
+const TELEGRAM_APP: &str = "Telegram";
 
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-pub struct ChatCaches {
-    checker: Arc<dyn ProcessChecker>,
-}
+pub struct ChatCaches;
 
 impl ChatCaches {
     pub fn new() -> Self {
-        Self {
-            checker: Arc::new(PgrepChecker),
-        }
-    }
-    #[cfg(test)]
-    pub fn with_checker(checker: Arc<dyn ProcessChecker>) -> Self {
-        Self { checker }
+        Self
     }
 }
 
@@ -58,10 +50,36 @@ impl CleanProvider for ChatCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Chat app caches and downloaded media the app fetches again when needed".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn item_apps(&self, path: &std::path::Path) -> Vec<String> {
+        let owner = home().and_then(|h| {
+            if path.starts_with(h.join(TELEGRAM_GROUP_CONTAINERS)) {
+                return Some(TELEGRAM_APP);
+            }
+            CHAT_PATHS
+                .iter()
+                .find(|(rel, _)| path == h.join(rel))
+                .map(|(_, app)| *app)
+        });
+        // An unrecognised path is gated on every chat app rather than none.
+        owner.map(|app| vec![app.to_string()]).unwrap_or_else(|| {
+            CHAT_PATHS
+                .iter()
+                .map(|(_, app)| *app)
+                .chain([TELEGRAM_APP])
+                .map(String::from)
+                .collect()
+        })
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -72,18 +90,18 @@ impl CleanProvider for ChatCaches {
             if !is_dir_safe(&path) {
                 continue;
             }
-            if self.checker.is_running(app) {
+            if ctx.known_running(app) {
                 continue;
             }
-            items.extend(root_as_item(&path, ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));
         }
         // Telegram: glob resolution.
-        let telegram_running = self.checker.is_running("Telegram");
-        for tg_media in telegram_media_dirs(&h.join(TELEGRAM_GROUP_CONTAINERS)) {
+        let telegram_running = ctx.known_running(TELEGRAM_APP);
+        for tg_media in telegram_media_dirs(ctx, &h.join(TELEGRAM_GROUP_CONTAINERS)) {
             if telegram_running {
                 continue;
             }
-            items.extend(root_as_item(&tg_media, ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(ctx, &tg_media, ID, LABEL, RiskLevel::Review));
         }
         Ok(items)
     }
@@ -94,14 +112,12 @@ impl CleanProvider for ChatCaches {
 
 /// Resolves `<group_containers>/*.ru.keepcoder.Telegram/account-*/postbox/
 /// media` for every matching account.
-pub fn telegram_media_dirs(group_containers: &std::path::Path) -> Vec<PathBuf> {
+pub fn telegram_media_dirs(
+    ctx: &ScanContext<'_>,
+    group_containers: &std::path::Path,
+) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(group_containers) {
-        Ok(it) => it,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for path in list_children(group_containers, ctx) {
         let name = match path.file_name().and_then(|n| n.to_str()) {
             Some(n) => n,
             None => continue,
@@ -109,12 +125,7 @@ pub fn telegram_media_dirs(group_containers: &std::path::Path) -> Vec<PathBuf> {
         if !name.ends_with(".ru.keepcoder.Telegram") {
             continue;
         }
-        let accounts = match std::fs::read_dir(&path) {
-            Ok(it) => it,
-            Err(_) => continue,
-        };
-        for acc in accounts.flatten() {
-            let acc_path = acc.path();
+        for acc_path in list_children(&path, ctx) {
             let acc_name = match acc_path.file_name().and_then(|n| n.to_str()) {
                 Some(n) => n,
                 None => continue,
@@ -159,9 +170,9 @@ mod tests {
 
     #[test]
     fn chat_paths_skip_running_apps() {
-        let mock = Arc::new(MockChecker::with_running(["Slack", "Discord", "Telegram"]));
-        let p = ChatCaches::with_checker(mock);
-        let items = p.discover().unwrap();
+        let mock = MockChecker::with_running(["Slack", "Discord", "Telegram"]);
+        let ctx = ScanContext::new(None, &mock);
+        let items = ChatCaches::new().discover(&ctx).unwrap();
         for item in &items {
             let s = item.path.to_string_lossy();
             assert!(!s.contains("/Slack/"), "Slack path leaked: {}", s);
@@ -185,7 +196,7 @@ mod tests {
         fs::create_dir_all(root.join("other.app/account-1/postbox/media")).unwrap();
         // Wrong-prefix account → must skip.
         fs::create_dir_all(root.join("X.ru.keepcoder.Telegram/profile-1/postbox/media")).unwrap();
-        let found = telegram_media_dirs(&root);
+        let found = telegram_media_dirs(&ScanContext::unchecked(), &root);
         assert_eq!(found.len(), 1);
         assert!(found[0].ends_with("account-12345/postbox/media"));
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);

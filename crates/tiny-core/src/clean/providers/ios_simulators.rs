@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, top_level_entries, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "ios-simulators";
@@ -27,8 +28,14 @@ impl CleanProvider for IosSimulators {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Simulator caches and devices Xcode can recreate".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn requires_app_quit(&self) -> Option<&'static str> {
         Some(APP)
@@ -40,7 +47,7 @@ impl CleanProvider for IosSimulators {
         };
         SIM_DIRS.iter().any(|s| h.join(s).is_dir())
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -48,6 +55,7 @@ impl CleanProvider for IosSimulators {
         let mut items = Vec::new();
         for sub in SIM_DIRS {
             items.extend(top_level_entries(
+                ctx,
                 &h.join(sub),
                 ID,
                 LABEL,

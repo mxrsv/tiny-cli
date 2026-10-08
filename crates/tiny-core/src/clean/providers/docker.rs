@@ -4,8 +4,9 @@ use std::sync::Arc;
 use crate::engine_error;
 use crate::error::Result;
 
-use super::CleanProvider;
+use super::{run_tool, CleanProvider};
 use crate::clean::runner::{CommandRunner, RealRunner};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "docker";
@@ -29,7 +30,6 @@ impl Docker {
             runner: Arc::new(RealRunner),
         }
     }
-    #[cfg(test)]
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
         Self { runner }
     }
@@ -48,6 +48,9 @@ impl CleanProvider for Docker {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Unused Docker images, build cache and volumes reported by docker system df".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
@@ -57,15 +60,24 @@ impl CleanProvider for Docker {
     fn available(&self) -> bool {
         self.runner.which("docker")
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("docker")
+    }
+    fn discover(&self, _ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         // `docker system df --format '{{json .}}'` emits one JSON object
         // per resource type (Images, Containers, Local Volumes, Build
-        // Cache). Daemon-down → non-zero exit → graceful empty.
-        let out = self
-            .runner
-            .run("docker", &["system", "df", "--format", "{{json .}}"]);
-        if !out.success {
-            return Ok(Vec::new());
+        // Cache). Daemon-down → non-zero exit → an error the checked
+        // discovery reports; the CLI still shows nothing for it.
+        let out = run_tool(
+            self.runner.as_ref(),
+            "docker",
+            &["system", "df", "--format", "{{json .}}"],
+        )?;
+        if !out.success() {
+            return Err(engine_error!(
+                "docker system df failed: {}",
+                out.stderr.trim()
+            ));
         }
         let mut items = Vec::new();
         for line in out.stdout.lines() {
@@ -222,18 +234,18 @@ mod tests {
     }
 
     #[test]
-    fn docker_daemon_down_returns_empty_safely() {
+    fn docker_daemon_down_is_a_discovery_error() {
         // which("docker") succeeds (CLI installed) but `system df` fails
-        // (daemon not running). Provider must NOT propagate error.
-        let runner = Arc::new(MockRunner::new().with_which("docker").with_response(
+        // (daemon not running). Checked discovery reports it; the CLI
+        // wrapper drops it, as it used to show nothing.
+        let runner = Arc::new(MockRunner::new().with_which("docker").with_exit(
             "docker",
             &["system", "df", "--format", "{{json .}}"],
-            false,
+            1,
             "",
         ));
         let p = Docker::with_runner(runner);
-        let items = p.discover().unwrap();
-        assert!(items.is_empty());
+        assert!(p.discover(&ScanContext::unchecked()).is_err());
     }
 
     #[test]
@@ -251,14 +263,14 @@ mod tests {
 {\"Type\":\"Local Volumes\",\"Size\":\"500MB\"}
 {\"Type\":\"Build Cache\",\"Size\":\"2GB\"}
 ";
-        let runner = Arc::new(MockRunner::new().with_which("docker").with_response(
+        let runner = Arc::new(MockRunner::new().with_which("docker").with_exit(
             "docker",
             &["system", "df", "--format", "{{json .}}"],
-            true,
+            0,
             out,
         ));
         let p = Docker::with_runner(runner);
-        let items = p.discover().unwrap();
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
         // 3 items (Images, Local Volumes, Build Cache); Containers skipped.
         assert_eq!(items.len(), 3);
         let total: u64 = items.iter().map(|i| i.size).sum();

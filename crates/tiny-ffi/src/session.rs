@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tiny_core::processes::Sampler;
 
+use crate::clean::CleanState;
 use crate::FfiError;
 
 /// One per app session. Rejects overlapping scans and mutations instead of
@@ -14,6 +15,7 @@ use crate::FfiError;
 pub struct TinySession {
     busy: AtomicBool,
     sampler: Mutex<Sampler>,
+    pub(crate) clean: Mutex<CleanState>,
 }
 
 #[uniffi::export]
@@ -79,6 +81,11 @@ impl CancellationToken {
 }
 
 impl CancellationToken {
+    /// The flag core operations poll between and inside work units.
+    pub(crate) fn flag(&self) -> &AtomicBool {
+        &self.cancelled
+    }
+
     /// Checkpoint between work units and before every mutation.
     pub fn check(&self) -> Result<(), FfiError> {
         if self.is_cancelled() {

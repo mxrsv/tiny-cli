@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use crate::error::Result;
 
-use super::{execute_per_item, root_as_item, CleanProvider};
+use super::{execute_per_item, root_as_item, run_tool, CleanProvider};
 use crate::clean::runner::{CommandRunner, RealRunner};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "go-cache";
@@ -20,7 +21,6 @@ impl GoCache {
             runner: Arc::new(RealRunner),
         }
     }
-    #[cfg(test)]
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
         Self { runner }
     }
@@ -39,17 +39,29 @@ impl CleanProvider for GoCache {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Go build and module caches Go re-creates on the next build".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn available(&self) -> bool {
         self.runner.which("go")
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("go")
+    }
+    fn roots_from_tool_output(&self) -> bool {
+        true
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let mut items = Vec::new();
         for var in ["GOCACHE", "GOMODCACHE"] {
-            let out = self.runner.run("go", &["env", var]);
-            if !out.success {
+            let out = run_tool(self.runner.as_ref(), "go", &["env", var])?;
+            if !out.success() {
                 continue;
             }
             let path = out.stdout.trim();
@@ -57,6 +69,7 @@ impl CleanProvider for GoCache {
                 continue;
             }
             items.extend(root_as_item(
+                ctx,
                 &PathBuf::from(path),
                 ID,
                 LABEL,
@@ -102,11 +115,11 @@ mod tests {
         let runner = Arc::new(
             MockRunner::new()
                 .with_which("go")
-                .with_response("go", &["env", "GOCACHE"], true, "")
-                .with_response("go", &["env", "GOMODCACHE"], false, ""),
+                .with_exit("go", &["env", "GOCACHE"], 0, "")
+                .with_exit("go", &["env", "GOMODCACHE"], 1, ""),
         );
         let p = GoCache::with_runner(runner);
-        let items = p.discover().unwrap();
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
         assert!(items.is_empty());
     }
 }

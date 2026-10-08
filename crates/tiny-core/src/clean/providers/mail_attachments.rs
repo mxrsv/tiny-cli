@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, top_level_entries, CleanProvider};
-use crate::clean::fs_safe::is_dir_safe;
+use crate::clean::fs_safe::{is_dir_safe, list_children};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "mail-attachments";
@@ -23,8 +24,14 @@ impl CleanProvider for MailAttachments {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Attachment copies Mail saved after you opened them".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn requires_app_quit(&self) -> Option<&'static str> {
         Some(APP)
@@ -34,15 +41,16 @@ impl CleanProvider for MailAttachments {
             .map(|h| is_dir_safe(&h.join("Library/Mail")))
             .unwrap_or(false)
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         let mut items = Vec::new();
-        for v_dir in v_dirs(&h.join("Library/Mail")) {
+        for v_dir in v_dirs(ctx, &h.join("Library/Mail")) {
             let attachments = v_dir.join("MailData/Attachments");
             items.extend(top_level_entries(
+                ctx,
                 &attachments,
                 ID,
                 LABEL,
@@ -58,14 +66,9 @@ impl CleanProvider for MailAttachments {
 
 /// Returns every direct child of `mail_root` whose name starts with `V`
 /// followed by digits (Mail's per-version data dirs: `V8`, `V9`, ...).
-pub fn v_dirs(mail_root: &std::path::Path) -> Vec<PathBuf> {
+pub fn v_dirs(ctx: &ScanContext<'_>, mail_root: &std::path::Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(mail_root) {
-        Ok(it) => it,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for path in list_children(mail_root, ctx) {
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(_) => continue,
@@ -124,7 +127,7 @@ mod tests {
         fs::create_dir_all(root.join("Vacation")).unwrap(); // letter-suffix → must skip
         fs::create_dir_all(root.join("V")).unwrap(); // bare V → must skip
         fs::write(root.join("V99"), b"file").unwrap(); // file, not dir → must skip
-        let mut found = v_dirs(&root);
+        let mut found = v_dirs(&ScanContext::unchecked(), &root);
         found.sort();
         assert_eq!(found.len(), 2);
         assert!(found.iter().all(|p| {

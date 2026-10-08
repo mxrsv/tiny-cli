@@ -1,11 +1,10 @@
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
-use crate::clean::fs_safe::is_dir_safe;
-use crate::clean::process::{PgrepChecker, ProcessChecker};
+use crate::clean::fs_safe::{is_dir_safe, list_children};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "browser-caches";
@@ -35,19 +34,11 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-pub struct BrowserCaches {
-    checker: Arc<dyn ProcessChecker>,
-}
+pub struct BrowserCaches;
 
 impl BrowserCaches {
     pub fn new() -> Self {
-        Self {
-            checker: Arc::new(PgrepChecker),
-        }
-    }
-    #[cfg(test)]
-    pub fn with_checker(checker: Arc<dyn ProcessChecker>) -> Self {
-        Self { checker }
+        Self
     }
 }
 
@@ -64,10 +55,36 @@ impl CleanProvider for BrowserCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Browser cache folders (never cookies, logins or history) the browser rebuilds".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn item_apps(&self, path: &Path) -> Vec<String> {
+        let owner = home().and_then(|h| {
+            if path.starts_with(h.join(FIREFOX_PROFILES_ROOT)) {
+                return Some(FIREFOX_APP);
+            }
+            BROWSER_CACHE_PATHS
+                .iter()
+                .find(|(rel, _)| path == h.join(rel))
+                .map(|(_, app)| *app)
+        });
+        // An unrecognised path is gated on every browser rather than none.
+        owner.map(|app| vec![app.to_string()]).unwrap_or_else(|| {
+            BROWSER_CACHE_PATHS
+                .iter()
+                .map(|(_, app)| *app)
+                .chain([FIREFOX_APP])
+                .map(String::from)
+                .collect()
+        })
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -78,18 +95,18 @@ impl CleanProvider for BrowserCaches {
             if !is_dir_safe(&path) {
                 continue;
             }
-            if self.checker.is_running(app) {
+            if ctx.known_running(app) {
                 continue;
             }
-            items.extend(root_as_item(&path, ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));
         }
         // Firefox glob.
-        let firefox_running = self.checker.is_running(FIREFOX_APP);
-        for cache2 in firefox_cache_dirs(&h.join(FIREFOX_PROFILES_ROOT)) {
+        let firefox_running = ctx.known_running(FIREFOX_APP);
+        for cache2 in firefox_cache_dirs(ctx, &h.join(FIREFOX_PROFILES_ROOT)) {
             if firefox_running {
                 continue;
             }
-            items.extend(root_as_item(&cache2, ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(ctx, &cache2, ID, LABEL, RiskLevel::Review));
         }
         Ok(items)
     }
@@ -100,14 +117,9 @@ impl CleanProvider for BrowserCaches {
 
 /// Resolves `<profiles_root>/<profile>/cache2` for every direct child
 /// profile directory.
-pub fn firefox_cache_dirs(profiles_root: &std::path::Path) -> Vec<PathBuf> {
+pub fn firefox_cache_dirs(ctx: &ScanContext<'_>, profiles_root: &std::path::Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(profiles_root) {
-        Ok(it) => it,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
+    for p in list_children(profiles_root, ctx) {
         if !is_dir_safe(&p) {
             continue;
         }
@@ -171,14 +183,9 @@ mod tests {
 
     #[test]
     fn browser_paths_skip_running_apps() {
-        let mock = Arc::new(MockChecker::with_running([
-            "Safari",
-            "Google Chrome",
-            "Arc",
-            "Firefox",
-        ]));
-        let p = BrowserCaches::with_checker(mock);
-        let items = p.discover().unwrap();
+        let mock = MockChecker::with_running(["Safari", "Google Chrome", "Arc", "Firefox"]);
+        let ctx = ScanContext::new(None, &mock);
+        let items = BrowserCaches::new().discover(&ctx).unwrap();
         for item in &items {
             let s = item.path.to_string_lossy();
             assert!(!s.contains("com.apple.Safari"), "Safari leaked: {}", s);
@@ -194,7 +201,7 @@ mod tests {
         // Two profiles, one with cache2, one without.
         fs::create_dir_all(root.join("abcd1234.default/cache2")).unwrap();
         fs::create_dir_all(root.join("efgh5678.dev-edition")).unwrap();
-        let found = firefox_cache_dirs(&root);
+        let found = firefox_cache_dirs(&ScanContext::unchecked(), &root);
         assert_eq!(found.len(), 1);
         assert!(found[0].ends_with("abcd1234.default/cache2"));
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);

@@ -12,8 +12,9 @@ use std::sync::Arc;
 use crate::engine_error;
 use crate::error::Result;
 
-use super::CleanProvider;
+use super::{run_tool, CleanProvider};
 use crate::clean::runner::{CommandRunner, RealRunner};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "time-machine-local";
@@ -34,7 +35,6 @@ impl TimeMachineLocal {
             runner: Arc::new(RealRunner),
         }
     }
-    #[cfg(test)]
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
         Self { runner }
     }
@@ -53,15 +53,21 @@ impl CleanProvider for TimeMachineLocal {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Local Time Machine snapshots macOS also thins on its own".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Destructive
     }
     fn available(&self) -> bool {
         self.runner.which("tmutil")
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
-        let out = self.runner.run("tmutil", &["listlocalsnapshots", "/"]);
-        if !out.success {
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("tmutil")
+    }
+    fn discover(&self, _ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        let out = run_tool(self.runner.as_ref(), "tmutil", &["listlocalsnapshots", "/"])?;
+        if !out.success() {
             return Ok(Vec::new());
         }
         let mut items = Vec::new();
@@ -210,28 +216,20 @@ mod tests {
 
     #[test]
     fn discover_returns_empty_when_tmutil_fails() {
-        let runner = Arc::new(MockRunner::new().with_response(
-            "tmutil",
-            &["listlocalsnapshots", "/"],
-            false,
-            "",
-        ));
+        let runner =
+            Arc::new(MockRunner::new().with_exit("tmutil", &["listlocalsnapshots", "/"], 1, ""));
         let p = TimeMachineLocal::with_runner(runner);
-        assert!(p.discover().unwrap().is_empty());
+        assert!(p.discover(&ScanContext::unchecked()).unwrap().is_empty());
     }
 
     #[test]
     fn discover_parses_snapshot_list() {
         let out = "Snapshots for volume group containing disk /:\n\
                    com.apple.TimeMachine.2025-01-01-000000.local\n";
-        let runner = Arc::new(MockRunner::new().with_response(
-            "tmutil",
-            &["listlocalsnapshots", "/"],
-            true,
-            out,
-        ));
+        let runner =
+            Arc::new(MockRunner::new().with_exit("tmutil", &["listlocalsnapshots", "/"], 0, out));
         let p = TimeMachineLocal::with_runner(runner);
-        let items = p.discover().unwrap();
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].size, 0);
         assert!(items[0]

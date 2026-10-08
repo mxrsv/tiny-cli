@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::error::Result;
 
 use super::{execute_per_item, is_idle, CleanProvider};
-use crate::clean::fs_safe::{dir_size_safe, is_dir_safe};
+use crate::clean::fs_safe::{dir_size_checked, is_dir_safe, list_children};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "downloads-old";
@@ -30,20 +31,29 @@ impl CleanProvider for DownloadsOld {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        format!(
+            "Files directly in Downloads not modified for {} days",
+            self.idle_days
+        )
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn available(&self) -> bool {
         home()
             .map(|h| is_dir_safe(&h.join("Downloads")))
             .unwrap_or(false)
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
-        Ok(list_old_files(&h.join("Downloads"), self.idle_days))
+        Ok(list_old_files(ctx, &h.join("Downloads"), self.idle_days))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
@@ -53,14 +63,9 @@ impl CleanProvider for DownloadsOld {
 /// Lists every file (not directory) directly inside `dir` whose mtime is
 /// older than `idle_days`. Non-recursive — subdirs are not descended (we
 /// don't want to recurse into a user's curated download folders).
-pub fn list_old_files(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
+pub fn list_old_files(ctx: &ScanContext<'_>, dir: &Path, idle_days: u64) -> Vec<CleanItem> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(dir) {
-        Ok(it) => it,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for path in list_children(dir, ctx) {
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(_) => continue,
@@ -71,7 +76,7 @@ pub fn list_old_files(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
         if !is_idle(&path, idle_days) {
             continue;
         }
-        let size = dir_size_safe(&path);
+        let size = dir_size_checked(&path, ctx);
         out.push(CleanItem {
             category_id: ID.to_string(),
             category_label: LABEL.to_string(),
@@ -121,7 +126,7 @@ mod tests {
         fs::write(&fresh, b"new").unwrap();
         fs::write(&stale, b"old").unwrap();
         backdate(&stale, 60);
-        let found = list_old_files(&dir, 30);
+        let found = list_old_files(&ScanContext::unchecked(), &dir, 30);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, stale);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&dir);
@@ -134,7 +139,7 @@ mod tests {
         let f = dir.join("subdir/inside.txt");
         fs::write(&f, b"x").unwrap();
         backdate(&f, 60);
-        let found = list_old_files(&dir, 30);
+        let found = list_old_files(&ScanContext::unchecked(), &dir, 30);
         // Subdirs not descended; even though file is old it's not flagged.
         assert!(found.is_empty());
         let _ = crate::clean::fs_safe::remove_recursive_safe(&dir);

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, top_level_entries, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "jetbrains";
@@ -23,8 +24,14 @@ impl CleanProvider for JetBrains {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "JetBrains IDE caches and logs the IDE rebuilds".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn available(&self) -> bool {
         let h = match home() {
@@ -33,7 +40,7 @@ impl CleanProvider for JetBrains {
         };
         JETBRAINS_DIRS.iter().any(|s| h.join(s).is_dir())
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -41,6 +48,7 @@ impl CleanProvider for JetBrains {
         let mut items = Vec::new();
         for sub in JETBRAINS_DIRS {
             items.extend(top_level_entries(
+                ctx,
                 &h.join(sub),
                 ID,
                 LABEL,

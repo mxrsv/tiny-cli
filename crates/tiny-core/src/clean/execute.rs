@@ -129,7 +129,13 @@ mod tests {
         fn risk(&self) -> RiskLevel {
             RiskLevel::Safe
         }
-        fn discover(&self) -> Result<Vec<CleanItem>> {
+        fn inclusion_reason(&self) -> String {
+            "fixture".into()
+        }
+        fn discover(
+            &self,
+            _ctx: &crate::clean::scan_context::ScanContext<'_>,
+        ) -> Result<Vec<CleanItem>> {
             Ok(Vec::new())
         }
         fn execute(&self, items: &[CleanItem], _action: ExecAction) -> Result<ExecReport> {

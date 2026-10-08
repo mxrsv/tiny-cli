@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, top_level_entries, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "crash-reports";
@@ -24,13 +25,20 @@ impl CleanProvider for CrashReports {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Crash and diagnostic reports kept only for troubleshooting".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Safe
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let mut items = Vec::new();
         if let Some(h) = home() {
             items.extend(top_level_entries(
+                ctx,
                 &h.join(USER_DIAG),
                 ID,
                 LABEL,
@@ -38,6 +46,7 @@ impl CleanProvider for CrashReports {
             ));
         }
         items.extend(top_level_entries(
+            ctx,
             &PathBuf::from(SYS_DIAG),
             ID,
             LABEL,
