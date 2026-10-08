@@ -94,7 +94,7 @@ import TinyEngine
     private static func row(_ pid: UInt32, parent: UInt32? = nil, start: UInt64 = 10, user: String? = "alice",
                             path: String? = nil, cpu: Float? = 20, memory: UInt64? = 1024) -> FfiProcessInfo {
         FfiProcessInfo(pid: pid, name: "process-\(pid)", user: user, isCurrentUser: user == "alice", parentPid: parent,
-                       startTime: start, cpuPercent: cpu, cpuMeasured: cpu != nil, memoryBytes: memory, executablePath: path)
+                       startTime: start, cpuPercent: cpu, cpuMeasured: cpu != nil, memoryBytes: memory, executablePath: path, refusal: nil)
     }
     private static func snapshot(_ rows: [FfiProcessInfo]) -> FfiProcessSnapshot {
         FfiProcessSnapshot(processes: rows, sampledAt: 100, cpuMeasured: true,

@@ -120,7 +120,7 @@ struct EngineTests {
 
     private static func process(memory: UInt64?, cpu: Float?) -> FfiProcessInfo {
         FfiProcessInfo(pid: 1, name: "fixture", user: nil, isCurrentUser: false,
-            parentPid: nil, startTime: 10, cpuPercent: cpu, cpuMeasured: cpu != nil, memoryBytes: memory, executablePath: nil)
+            parentPid: nil, startTime: 10, cpuPercent: cpu, cpuMeasured: cpu != nil, memoryBytes: memory, executablePath: nil, refusal: nil)
     }
 }
 

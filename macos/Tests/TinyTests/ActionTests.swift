@@ -29,10 +29,10 @@ import TinyEngine
         let refusals: [FfiRefusal] = [.ownProcess, .ownParent, .systemProcess, .otherUser, .protected(name: "Finder"), .identityUncertain]
         try check(Set(refusals.map(ActionCopy.refusal)).count == refusals.count, "every refusal has distinct copy")
         try check(ActionCopy.refusal(.protected(name: "Finder")).contains("Finder"), "protected names the process")
-        try check(ActionCopy.eligibility(process(1)) == ActionCopy.refusal(.systemProcess), "launchd blocked up front")
-        try check(ActionCopy.eligibility(process(50, mine: false)) == ActionCopy.refusal(.otherUser), "other user blocked up front")
-        try check(ActionCopy.eligibility(process(UInt32(ProcessInfo.processInfo.processIdentifier))) == ActionCopy.refusal(.ownProcess), "self blocked")
-        try check(ActionCopy.eligibility(row, ownPID: 2, parentPID: 3) == nil, "own ordinary process eligible")
+        for reason in refusals {
+            try check(ActionCopy.eligibility(process(50, refusal: reason)) == ActionCopy.refusal(reason), "Rust refusal blocks Quit up front")
+        }
+        try check(ActionCopy.eligibility(row) == nil, "own ordinary process eligible")
         let force = ActionCopy.request(row, kind: .force)
         try check(force.isDestructive && force.title.contains("node") && force.title.contains("77")
                   && force.message.contains("SIGKILL"), "force confirmation names target and consequence")
@@ -145,16 +145,23 @@ import TinyEngine
         let path = "/Applications/Editor.app"
         let group = AppGroup(id: "app:\(path)", name: "Editor", bundlePath: path, members: [process(40), process(41)])
         let outer = AppCandidate(pid: 40, bundleURL: URL(fileURLWithPath: path), launchDate: launch)
-        let ready = AppQuit.resolve(group, candidates: [outer], ownPID: 1)
+        let ready = AppQuit.resolve(group, candidates: [outer])
         try check(ready == .ready(AppQuitTarget(name: "Editor", bundlePath: path, pid: 40, launchDate: launch)), "one matching app")
-        try check(AppQuit.resolve(group, candidates: [], ownPID: 1).reason != nil, "no running app disables Quit")
+        try check(AppQuit.resolve(group, candidates: []).reason?.contains("does not list") == true, "no running app disables Quit")
         let relaunched = AppCandidate(pid: 40, bundleURL: URL(fileURLWithPath: path), launchDate: Date(timeIntervalSince1970: 50))
-        try check(AppQuit.resolve(group, candidates: [relaunched], ownPID: 1).reason != nil, "launch time must match the member")
+        try check(AppQuit.resolve(group, candidates: [relaunched]).reason?.contains("launch time") == true, "launch time must match the member")
         let helper = AppCandidate(pid: 41, bundleURL: URL(fileURLWithPath: path + "/Contents/Helpers/Helper.app"), launchDate: launch)
-        try check(AppQuit.resolve(group, candidates: [helper], ownPID: 1).reason != nil, "nested helper is not the app")
+        try check(AppQuit.resolve(group, candidates: [helper]).reason != nil, "nested helper is not the app")
         let second = AppCandidate(pid: 41, bundleURL: URL(fileURLWithPath: path), launchDate: launch)
-        try check(AppQuit.resolve(group, candidates: [outer, second], ownPID: 1).reason?.contains("Several") == true, "ambiguous instances")
-        try check(AppQuit.resolve(group, candidates: [outer], ownPID: 40).reason?.contains("Tiny") == true, "Tiny cannot quit itself")
+        try check(AppQuit.resolve(group, candidates: [outer, second]).reason?.contains("Several") == true, "ambiguous instances")
+        let finderPath = "/System/Library/CoreServices/Finder.app"
+        let finder = AppGroup(id: "app:\(finderPath)", name: "Finder", bundlePath: finderPath,
+                              members: [process(60, name: "Finder", refusal: .protected(name: "Finder"))])
+        let finderApp = AppCandidate(pid: 60, bundleURL: URL(fileURLWithPath: finderPath), launchDate: launch)
+        try check(AppQuit.resolve(finder, candidates: [finderApp]) == .unavailable(ActionCopy.refusal(.protected(name: "Finder"))),
+                  "protected app with a launch date stays disabled with Rust's reason")
+        let own = AppGroup(id: "app:\(path)", name: "Tiny Dev", bundlePath: path, members: [process(40, refusal: .ownProcess)])
+        try check(AppQuit.resolve(own, candidates: [outer]) == .unavailable(ActionCopy.refusal(.ownProcess)), "Tiny cannot quit itself")
         let background = AppGroup(id: "process:1", name: "tool", bundlePath: nil, members: [process(42)])
         try check(AppQuit.resolve(background, candidates: []).reason != nil, "background groups have no app Quit")
     }
@@ -183,9 +190,9 @@ import TinyEngine
         return (actions, marker, { defaults.removePersistentDomain(forName: suite) })
     }
 
-    private static func process(_ pid: UInt32, name: String = "sample", mine: Bool = true) -> FfiProcessInfo {
-        FfiProcessInfo(pid: pid, name: name, user: "alice", isCurrentUser: mine, parentPid: nil,
-                       startTime: 10, cpuPercent: 1, cpuMeasured: true, memoryBytes: 1024, executablePath: nil)
+    private static func process(_ pid: UInt32, name: String = "sample", refusal: FfiRefusal? = nil) -> FfiProcessInfo {
+        FfiProcessInfo(pid: pid, name: name, user: "alice", isCurrentUser: refusal != .otherUser, parentPid: nil,
+                       startTime: 10, cpuPercent: 1, cpuMeasured: true, memoryBytes: 1024, executablePath: nil, refusal: refusal)
     }
 }
 

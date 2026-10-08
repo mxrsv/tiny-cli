@@ -39,23 +39,25 @@ struct AppCandidate {
         })
     }
 
-    /// Exactly one outer-bundle app whose PID and launch time match a member of the group.
-    static func resolve(_ group: AppGroup, candidates: [AppCandidate],
-                        ownPID: Int32 = ProcessInfo.processInfo.processIdentifier) -> Resolution {
+    /// Exactly one outer-bundle app whose PID and launch time match a member of the
+    /// group, and which Rust would not refuse (protected, system, own, other user).
+    static func resolve(_ group: AppGroup, candidates: [AppCandidate]) -> Resolution {
         guard let bundlePath = group.bundlePath else { return .unavailable("Not a macOS app bundle.") }
         let members = Dictionary(group.members.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
-        let matches = candidates.filter { candidate in
+        let owned = candidates.compactMap { candidate -> (AppCandidate, FfiProcessInfo)? in
             guard let url = candidate.bundleURL, url.isFileURL, url.standardizedFileURL.path == bundlePath,
-                  let pid = UInt32(exactly: candidate.pid), let member = members[pid] else { return false }
-            return AppCatalog.matches(member, launchDate: candidate.launchDate)
+                  let pid = UInt32(exactly: candidate.pid), let member = members[pid] else { return nil }
+            return (candidate, member)
         }
-        if matches.contains(where: { $0.pid == ownPID }) {
-            return .unavailable("This is Tiny. Quit it from its own menu.")
+        if let refusal = owned.lazy.compactMap(\.1.refusal).first {
+            return .unavailable(ActionCopy.refusal(refusal))
         }
+        let matches = owned.filter { AppCatalog.matches($0.1, launchDate: $0.0.launchDate) }.map(\.0)
         guard matches.count == 1, let app = matches.first, let launchDate = app.launchDate else {
-            return .unavailable(matches.isEmpty
-                ? "macOS lists no running app for this bundle. Quit its processes individually."
-                : "Several copies of this app are running. Quit their processes individually.")
+            if matches.count > 1 { return .unavailable("Several copies of this app are running. Quit their processes individually.") }
+            return .unavailable(owned.isEmpty
+                ? "macOS does not list this bundle as a running app; it may be a helper or tool. Quit its processes individually."
+                : "macOS did not report a matching launch time, so Tiny cannot confirm which app to quit. Quit its processes individually.")
         }
         return .ready(AppQuitTarget(name: group.name, bundlePath: bundlePath, pid: app.pid, launchDate: launchDate))
     }

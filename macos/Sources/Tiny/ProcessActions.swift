@@ -73,16 +73,8 @@ enum ActionCopy {
         }
     }
 
-    /// What Swift already knows before asking Rust. Protected names stay a Rust decision.
-    static func eligibility(_ process: FfiProcessInfo,
-                            ownPID: UInt32 = UInt32(ProcessInfo.processInfo.processIdentifier),
-                            parentPID: UInt32 = UInt32(getppid())) -> String? {
-        if process.pid <= 1 { return refusal(.systemProcess) }
-        if process.pid == ownPID { return refusal(.ownProcess) }
-        if process.pid == parentPID { return refusal(.ownParent) }
-        if !process.isCurrentUser { return refusal(.otherUser) }
-        return nil
-    }
+    /// Rust's refusal from the last sample; `processTerminate` still re-checks it.
+    static func eligibility(_ process: FfiProcessInfo) -> String? { process.refusal.map(refusal) }
 
     static func notice(_ outcome: FfiTerminateOutcome, process: FfiProcessInfo, kind: FfiTerminateKind) -> ActionNotice {
         let target = label(process)

@@ -24,6 +24,9 @@ pub struct FfiProcessInfo {
     pub cpu_measured: bool,
     pub memory_bytes: Option<u64>,
     pub executable_path: Option<String>,
+    /// Why `process_terminate` would refuse this process, if anything. Lets
+    /// the UI disable Quit up front instead of offering a refused action.
+    pub refusal: Option<FfiRefusal>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -288,6 +291,7 @@ impl From<PortOwners> for FfiPortOwners {
 
 impl From<ProcessInfo> for FfiProcessInfo {
     fn from(info: ProcessInfo) -> Self {
+        let refusal = processes::refusal(&info).map(Into::into);
         Self {
             pid: info.pid,
             name: info.name,
@@ -301,6 +305,7 @@ impl From<ProcessInfo> for FfiProcessInfo {
             executable_path: info
                 .exe
                 .and_then(|path| path.into_os_string().into_string().ok()),
+            refusal,
         }
     }
 }
@@ -362,6 +367,29 @@ mod tests {
             .expect("own process is sampled");
         assert!(me.is_current_user);
         assert!(me.cpu_measured);
+        assert_eq!(me.refusal, Some(FfiRefusal::OwnProcess));
+    }
+
+    #[test]
+    fn listed_processes_carry_the_terminate_refusal() {
+        let session = TinySession::new();
+        let list = session.process_list().unwrap().processes;
+        let launchd = list
+            .iter()
+            .find(|p| p.pid == 1)
+            .expect("launchd is sampled");
+        assert_eq!(launchd.refusal, Some(FfiRefusal::SystemProcess));
+        let parent = list
+            .iter()
+            .find(|p| p.pid == std::os::unix::process::parent_id())
+            .expect("parent is sampled");
+        assert_eq!(parent.refusal, Some(FfiRefusal::OwnParent));
+        let (mut child, _) = sleeper(&session);
+        let listed = session.process_list().unwrap().processes;
+        let sleeping = listed.iter().find(|p| p.pid == child.id()).unwrap();
+        assert_eq!(sleeping.refusal, None);
+        child.kill().unwrap();
+        child.wait().unwrap();
     }
 
     #[test]
