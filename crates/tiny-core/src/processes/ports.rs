@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::snapshot::{ProcessInfo, ProcessSnapshot};
+use super::snapshot::{unix_now, ProcessInfo, ProcessSnapshot};
 use super::terminate::{refusal, Refusal};
 use crate::error::{Error, Result};
 use crate::runner::CommandRunner;
@@ -109,6 +109,7 @@ pub fn port_owners(
         ));
     }
     let filter = format!("-iTCP:{port}");
+    let lookup_started = unix_now();
     let stdout = run_lsof(&["-nP", &filter, "-sTCP:LISTEN", "-Fpn"], runner)
         .map_err(|detail| Error::Operation(format!("port {port} lookup failed: {detail}")))?;
     let mut pids: Vec<u32> = parse_lsof(&stdout.unwrap_or_default())
@@ -119,7 +120,7 @@ pub fn port_owners(
     let snapshot = sample();
     let owners = pids
         .into_iter()
-        .map(|pid| port_owner(pid, &snapshot))
+        .map(|pid| port_owner(pid, &snapshot, lookup_started))
         .collect();
     Ok(PortOwners {
         port,
@@ -130,9 +131,17 @@ pub fn port_owners(
     })
 }
 
-fn port_owner(pid: u32, snapshot: &ProcessSnapshot) -> PortOwner {
+/// `lookup_started` is the Unix time just before `lsof` ran. A sampled process
+/// that started later may hold a reused PID, so it is never actionable.
+fn port_owner(pid: u32, snapshot: &ProcessSnapshot, lookup_started: u64) -> PortOwner {
     let process = snapshot.processes.iter().find(|p| p.pid == pid).cloned();
-    let refusal = process.as_ref().and_then(refusal);
+    let refusal = process.as_ref().and_then(|process| {
+        if process.start_time > lookup_started {
+            Some(Refusal::IdentityUncertain)
+        } else {
+            refusal(process)
+        }
+    });
     PortOwner {
         pid,
         process,
@@ -170,6 +179,7 @@ pub fn listeners(
     runner: &dyn CommandRunner,
     sample: impl FnOnce() -> ProcessSnapshot,
 ) -> Result<Listeners> {
+    let lookup_started = unix_now();
     let stdout = run_lsof(&["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"], runner)
         .map_err(|detail| Error::Operation(format!("listener lookup failed: {detail}")))?;
     let mut entries = parse_lsof(&stdout.unwrap_or_default());
@@ -180,7 +190,7 @@ pub fn listeners(
     let listeners = entries
         .into_iter()
         .map(|(pid, socket)| {
-            let owner = port_owner(pid, &snapshot);
+            let owner = port_owner(pid, &snapshot, lookup_started);
             Listener {
                 port: socket.port,
                 address: socket.address,
@@ -352,6 +362,32 @@ mod tests {
         );
         assert_eq!(found.visibility_caveat, PORT_VISIBILITY_CAVEAT);
         assert_eq!((found.port, found.sampled_at), (8080, 7));
+    }
+
+    #[test]
+    fn owner_started_after_the_lookup_is_identity_uncertain() {
+        let runner = MockRunner::new().with_output(
+            LSOF,
+            &OWNER_ARGS,
+            Ok(outcome(0, "p4100\nf5\nn*:8080\n", "")),
+        );
+        let reused = || {
+            let mut snapshot = sample();
+            snapshot.processes[0].start_time = u64::MAX;
+            snapshot
+        };
+        let found = port_owners(8080, &runner, reused).unwrap();
+        assert_eq!(found.owners[0].refusal, Some(Refusal::IdentityUncertain));
+        assert!(!found.owners[0].actionable());
+
+        let runner = MockRunner::new().with_output(
+            LSOF,
+            &LISTENER_ARGS,
+            Ok(outcome(0, "p4100\nf5\nn*:8080\n", "")),
+        );
+        let found = listeners(&runner, reused).unwrap();
+        assert_eq!(found.listeners[0].refusal, Some(Refusal::IdentityUncertain));
+        assert!(!found.listeners[0].actionable);
     }
 
     #[test]

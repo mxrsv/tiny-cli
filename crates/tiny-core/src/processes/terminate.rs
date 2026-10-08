@@ -76,6 +76,9 @@ pub enum Refusal {
     Protected {
         name: String,
     },
+    /// Port lookups only: the process started after `lsof` ran, so its PID
+    /// may have been reused and it may not own the socket.
+    IdentityUncertain,
 }
 
 impl fmt::Display for Refusal {
@@ -86,6 +89,9 @@ impl fmt::Display for Refusal {
             Self::SystemProcess => f.write_str("it is a system process (PID 0 or 1)"),
             Self::OtherUser => f.write_str("it belongs to another user"),
             Self::Protected { name } => write!(f, "{name} is protected"),
+            Self::IdentityUncertain => {
+                f.write_str("it started after the port lookup, so it may not own the socket")
+            }
         }
     }
 }

@@ -88,7 +88,11 @@ pub enum FfiRefusal {
     OwnParent,
     SystemProcess,
     OtherUser,
-    Protected { name: String },
+    Protected {
+        name: String,
+    },
+    /// Port lookups only: started after the lookup, so the PID may be reused.
+    IdentityUncertain,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
@@ -239,6 +243,7 @@ impl From<Refusal> for FfiRefusal {
             Refusal::SystemProcess => Self::SystemProcess,
             Refusal::OtherUser => Self::OtherUser,
             Refusal::Protected { name } => Self::Protected { name },
+            Refusal::IdentityUncertain => Self::IdentityUncertain,
         }
     }
 }
