@@ -23,13 +23,21 @@ final class AppState {
     private(set) var detailSampledAt: Date?
     private(set) var refreshing = false
     private(set) var detailLoading = false
+    private(set) var listeners: FfiListeners?
+    private(set) var listenersError: String?
+    let actions: ActionState
     @ObservationIgnored private let catalog = AppCatalog()
     @ObservationIgnored private let engine: Engine
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var pendingRefresh = false
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
-    init(engine: Engine = Engine()) { self.engine = engine }
+    init(engine: Engine = Engine(), defaults: UserDefaults = .standard) {
+        self.engine = engine
+        actions = ActionState(terminate: { try await engine.terminate($0, kind: $1) },
+                              quitApp: { await AppQuit.quit($0) }, marker: InFlightMarker(defaults: defaults))
+        actions.onFinish = { [weak self] in self?.requestRefresh() }
+    }
 
     var selectedGroup: AppGroup? { groups.first { $0.id == groupSelection } }
     var appCount: Int { groups.filter(\.isApplication).count }
@@ -42,6 +50,7 @@ final class AppState {
         return apps + (showBackground || !search.isEmpty ? background : [])
     }
     func icon(for group: AppGroup) -> NSImage { catalog.icon(for: group) }
+    var ports: PortsDisplay { PortsDisplay.make(listeners: listeners, error: listenersError) }
 
     static func sortedGroups(_ groups: [AppGroup], sort: Sort) -> [AppGroup] {
         groups.sorted { a, b in
@@ -139,8 +148,26 @@ final class AppState {
             apply(result)
         } catch is CancellationError { return }
         catch { recordListError(error) }
-        guard !Task.isCancelled, let selection else { detailLoading = false; return }
-        await refreshDetail(selection, generation: generation)
+        if !Task.isCancelled, let selection { await refreshDetail(selection, generation: generation) }
+        else { detailLoading = false }
+        guard !Task.isCancelled else { return }
+        do {
+            let result = try await engine.listeners()
+            try Task.checkCancellation()
+            applyListeners(result)
+        } catch is CancellationError { return }
+        catch { recordListenersError(error) }
+    }
+
+    func applyListeners(_ result: FfiListeners) {
+        listeners = result
+        listenersError = nil
+    }
+
+    /// A failed probe is an error state, never an empty list.
+    func recordListenersError(_ error: any Error) {
+        listeners = nil
+        listenersError = "Cannot read listening ports. \(ActionCopy.describe(error))"
     }
 
     func recordListError(_ error: any Error) {

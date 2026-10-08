@@ -12,7 +12,8 @@ import TinyEngine
             try cancelledResponseCannotInstallDetail()
             print("PASS: 5 process state checks")
             try AppGroupTests.run()
-            print("PASS: 15 total native checks")
+            try await ActionTests.run()
+            print("PASS: 23 total native checks")
         } catch {
             FileHandle.standardError.write(Data("FAIL: \(error)\n".utf8))
             exit(1)

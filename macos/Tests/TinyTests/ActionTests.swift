@@ -1,0 +1,218 @@
+import Foundation
+import TinyEngine
+
+@MainActor enum ActionTests {
+    static func run() async throws {
+        try outcomeAndRefusalCopy()
+        try await cancelSendsNothingAndForceConfirmsSeparately()
+        try await busyIsReportedAndNothingQueued()
+        try await markerSetClearedAndDetectedAtLaunch()
+        try listenersStates()
+        try appQuitResolution()
+        try await appQuitStillRunningNeverEscalates()
+        print("PASS: 7 action checks (copy, confirmation, busy, marker, listeners, app resolution, app quit)")
+    }
+
+    private static func outcomeAndRefusalCopy() throws {
+        let row = process(77, name: "node")
+        let outcomes: [FfiTerminateOutcome] = [.exited, .stillRunning, .alreadyExited, .permissionDenied, .identityChanged,
+                                               .refused(reason: .protected(name: "Dock"))]
+        for kind in [FfiTerminateKind.graceful, .force] {
+            let texts = outcomes.map { ActionCopy.notice($0, process: row, kind: kind).text }
+            try check(Set(texts).count == outcomes.count, "every outcome has distinct copy")
+            try check(texts.allSatisfy { $0.contains("77") }, "outcome copy names the PID")
+        }
+        try check(ActionCopy.notice(.exited, process: row, kind: .graceful).tone == .success, "exit is success")
+        let still = ActionCopy.notice(.stillRunning, process: row, kind: .graceful)
+        try check(still.tone == .warning && still.text.contains("Force Quit…"), "still running suggests, never sends, force")
+        try check(ActionCopy.notice(.permissionDenied, process: row, kind: .force).tone == .failure, "denied is failure")
+        let refusals: [FfiRefusal] = [.ownProcess, .ownParent, .systemProcess, .otherUser, .protected(name: "Finder"), .identityUncertain]
+        try check(Set(refusals.map(ActionCopy.refusal)).count == refusals.count, "every refusal has distinct copy")
+        try check(ActionCopy.refusal(.protected(name: "Finder")).contains("Finder"), "protected names the process")
+        try check(ActionCopy.eligibility(process(1)) == ActionCopy.refusal(.systemProcess), "launchd blocked up front")
+        try check(ActionCopy.eligibility(process(50, mine: false)) == ActionCopy.refusal(.otherUser), "other user blocked up front")
+        try check(ActionCopy.eligibility(process(UInt32(ProcessInfo.processInfo.processIdentifier))) == ActionCopy.refusal(.ownProcess), "self blocked")
+        try check(ActionCopy.eligibility(row, ownPID: 2, parentPID: 3) == nil, "own ordinary process eligible")
+        let force = ActionCopy.request(row, kind: .force)
+        try check(force.isDestructive && force.title.contains("node") && force.title.contains("77")
+                  && force.message.contains("SIGKILL"), "force confirmation names target and consequence")
+        let quit = ActionCopy.request(row, kind: .graceful)
+        try check(!quit.isDestructive && quit.title.contains("“node” (PID 77)") && quit.message.contains("SIGTERM"), "quit confirmation")
+        try check(ActionCopy.notice(FfiError.Operation(detail: "kill failed"), summary: "Quit x").text.contains("kill failed"), "typed error detail")
+    }
+
+    private static func cancelSendsNothingAndForceConfirmsSeparately() async throws {
+        let recorder = Recorder(result: .stillRunning)
+        let (actions, marker, cleanup) = makeActions(recorder)
+        defer { cleanup() }
+        let row = process(88)
+        actions.request(row, kind: .graceful)
+        try check(actions.pending?.target == .process(row, .graceful), "quit opens a confirmation, sends nothing")
+        actions.cancel()
+        try check(actions.pending == nil && recorder.calls.isEmpty && marker.pending == nil, "cancel sends nothing")
+        actions.request(row, kind: .graceful)
+        guard let quit = actions.pending else { throw CheckFailure(message: "quit request pending") }
+        await actions.confirm(quit)?.value
+        try check(recorder.calls.map(\.1) == [.graceful] && recorder.calls[0].0 == FfiTerminateTarget(row), "one graceful signal to the confirmed target")
+        try check(actions.notice?.tone == .warning && actions.pending == nil, "still running reported, nothing chained")
+        try check(actions.confirm(quit) == nil && recorder.calls.count == 1, "a confirmed request cannot run twice")
+        actions.request(row, kind: .force)
+        guard let force = actions.pending, force.isDestructive, force.id != quit.id else {
+            throw CheckFailure(message: "force needs its own destructive confirmation")
+        }
+        actions.cancel()
+        try check(actions.confirm(force) == nil && recorder.calls.count == 1, "cancelled force sends nothing")
+        actions.request(row, kind: .force)
+        await actions.pending.flatMap { actions.confirm($0) }?.value
+        try check(recorder.calls.map(\.1) == [.graceful, .force], "force only after its own confirmation")
+    }
+
+    private static func busyIsReportedAndNothingQueued() async throws {
+        let recorder = Recorder(result: .exited, error: FfiError.Busy)
+        let (actions, _, cleanup) = makeActions(recorder)
+        defer { cleanup() }
+        actions.request(process(5), kind: .graceful)
+        await actions.pending.flatMap { actions.confirm($0) }?.value
+        try check(actions.notice == ActionCopy.busy && actions.notice?.text.contains("Another operation is running") == true, "Busy copy")
+        try check(recorder.calls.count == 1 && !actions.isRunning, "Busy is not retried")
+
+        let slow = Recorder(result: .exited, delay: .milliseconds(200))
+        let (second, _, cleanupSecond) = makeActions(slow)
+        defer { cleanupSecond() }
+        second.request(process(6), kind: .graceful)
+        let task = second.pending.flatMap { second.confirm($0) }
+        try check(second.isRunning, "running state set before the call")
+        second.request(process(7), kind: .force)
+        try check(second.pending == nil && second.notice == ActionCopy.busy, "request during an action is rejected, not queued")
+        await task?.value
+        try check(slow.calls.map(\.0.pid) == [6], "only the confirmed action ran")
+    }
+
+    private static func markerSetClearedAndDetectedAtLaunch() async throws {
+        let recorder = Recorder(result: .exited)
+        let (actions, marker, cleanup) = makeActions(recorder)
+        defer { cleanup() }
+        recorder.onCall = { recorder.markerDuringCall = marker.pending }
+        actions.request(process(9, name: "worker"), kind: .force)
+        await actions.pending.flatMap { actions.confirm($0) }?.value
+        try check(recorder.markerDuringCall?.contains("worker") == true, "marker persisted before the call")
+        try check(marker.pending == nil, "marker cleared on return")
+
+        let panic = Recorder(result: .exited, error: CocoaError(.featureUnsupported))
+        let (crashed, panicMarker, cleanupPanic) = makeActions(panic)
+        defer { cleanupPanic() }
+        crashed.request(process(10, name: "worker"), kind: .graceful)
+        await crashed.pending.flatMap { crashed.confirm($0) }?.value
+        try check(crashed.notice?.tone == .unknown && panicMarker.pending == nil, "panic is an unknown outcome, marker cleared")
+
+        panicMarker.begin("Force Quit “worker” (PID 10)")
+        let relaunched = ActionState(terminate: { _, _ in .exited }, quitApp: { _ in .exited }, marker: panicMarker)
+        try check(relaunched.notice?.tone == .unknown && relaunched.notice?.text.contains("PID 10") == true, "marker at launch shows notice")
+        try check(panicMarker.pending != nil, "launch does not clear before the user sees it")
+        relaunched.dismissNotice()
+        try check(panicMarker.pending == nil && relaunched.notice == nil, "dismiss clears the marker")
+    }
+
+    private static func listenersStates() throws {
+        let caveat = "Only listeners visible to the current user are shown."
+        try check(PortsDisplay.make(listeners: nil, error: nil) == .loading, "loading before first probe")
+        try check(PortsDisplay.make(listeners: FfiListeners(listeners: [], visibilityCaveat: caveat, sampledAt: 1), error: nil)
+                  == .empty(caveat: caveat), "empty list keeps caveat, not 'no ports in use'")
+        let row = process(30, name: "node")
+        let listeners = [
+            FfiListener(port: 3000, address: "127.0.0.1", pid: 30, process: row, refusal: nil, actionable: true),
+            FfiListener(port: 3000, address: "::1", pid: 30, process: row, refusal: nil, actionable: true),
+            FfiListener(port: 5000, address: "*", pid: 31, process: process(31), refusal: .identityUncertain, actionable: false),
+            FfiListener(port: 6000, address: "*", pid: 32, process: nil, refusal: nil, actionable: false)]
+        guard case let .rows(rows, shown) = PortsDisplay.make(listeners: FfiListeners(listeners: listeners, visibilityCaveat: caveat, sampledAt: 1), error: nil) else {
+            throw CheckFailure(message: "rows expected")
+        }
+        try check(shown == caveat && rows.count == 3, "caveat shown; IPv4/IPv6 of one owner share a row")
+        try check(rows[0].addresses == ["127.0.0.1", "::1"] && rows[0].blockedReason == nil, "actionable owner")
+        try check(rows[1].blockedReason == ActionCopy.refusal(.identityUncertain), "IdentityUncertain not actionable")
+        try check(rows[2].blockedReason?.contains("Not in the current") == true, "owner missing from sample not actionable")
+        let state = AppState()
+        state.applyListeners(FfiListeners(listeners: [], visibilityCaveat: caveat, sampledAt: 1))
+        state.recordListenersError(FfiError.Operation(detail: "lsof timed out"))
+        guard case let .failed(message) = state.ports, message.contains("lsof timed out") else {
+            throw CheckFailure(message: "probe error is an error state, not an empty list")
+        }
+        state.stop()
+    }
+
+    private static func appQuitResolution() throws {
+        let launch = Date(timeIntervalSince1970: 10.4)
+        let path = "/Applications/Editor.app"
+        let group = AppGroup(id: "app:\(path)", name: "Editor", bundlePath: path, members: [process(40), process(41)])
+        let outer = AppCandidate(pid: 40, bundleURL: URL(fileURLWithPath: path), launchDate: launch)
+        let ready = AppQuit.resolve(group, candidates: [outer], ownPID: 1)
+        try check(ready == .ready(AppQuitTarget(name: "Editor", bundlePath: path, pid: 40, launchDate: launch)), "one matching app")
+        try check(AppQuit.resolve(group, candidates: [], ownPID: 1).reason != nil, "no running app disables Quit")
+        let relaunched = AppCandidate(pid: 40, bundleURL: URL(fileURLWithPath: path), launchDate: Date(timeIntervalSince1970: 50))
+        try check(AppQuit.resolve(group, candidates: [relaunched], ownPID: 1).reason != nil, "launch time must match the member")
+        let helper = AppCandidate(pid: 41, bundleURL: URL(fileURLWithPath: path + "/Contents/Helpers/Helper.app"), launchDate: launch)
+        try check(AppQuit.resolve(group, candidates: [helper], ownPID: 1).reason != nil, "nested helper is not the app")
+        let second = AppCandidate(pid: 41, bundleURL: URL(fileURLWithPath: path), launchDate: launch)
+        try check(AppQuit.resolve(group, candidates: [outer, second], ownPID: 1).reason?.contains("Several") == true, "ambiguous instances")
+        try check(AppQuit.resolve(group, candidates: [outer], ownPID: 40).reason?.contains("Tiny") == true, "Tiny cannot quit itself")
+        let background = AppGroup(id: "process:1", name: "tool", bundlePath: nil, members: [process(42)])
+        try check(AppQuit.resolve(background, candidates: []).reason != nil, "background groups have no app Quit")
+    }
+
+    private static func appQuitStillRunningNeverEscalates() async throws {
+        let recorder = Recorder(result: .exited)
+        var quits: [AppQuitTarget] = []
+        let suite = "tiny.native-checks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let actions = ActionState(terminate: recorder.terminate, quitApp: { quits.append($0); return .stillRunning },
+                                  marker: InFlightMarker(defaults: defaults))
+        let target = AppQuitTarget(name: "Editor", bundlePath: "/Applications/Editor.app", pid: 40, launchDate: Date())
+        actions.request(app: target)
+        try check(actions.pending?.title == "Quit “Editor”?" && actions.pending?.isDestructive == false, "app quit confirmation")
+        await actions.pending.flatMap { actions.confirm($0) }?.value
+        try check(quits == [target] && recorder.calls.isEmpty, "one app quit request; no process signal")
+        try check(actions.notice?.text.contains("save dialog") == true, "still open is reported honestly")
+    }
+
+    private static func makeActions(_ recorder: Recorder) -> (ActionState, InFlightMarker, () -> Void) {
+        let suite = "tiny.native-checks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let marker = InFlightMarker(defaults: defaults)
+        let actions = ActionState(terminate: recorder.terminate, quitApp: { _ in .exited }, marker: marker)
+        return (actions, marker, { defaults.removePersistentDomain(forName: suite) })
+    }
+
+    private static func process(_ pid: UInt32, name: String = "sample", mine: Bool = true) -> FfiProcessInfo {
+        FfiProcessInfo(pid: pid, name: name, user: "alice", isCurrentUser: mine, parentPid: nil,
+                       startTime: 10, cpuPercent: 1, cpuMeasured: true, memoryBytes: 1024, executablePath: nil)
+    }
+}
+
+/// Fake `processTerminate`: records every call and never signals anything.
+@MainActor final class Recorder {
+    var calls: [(FfiTerminateTarget, FfiTerminateKind)] = []
+    var markerDuringCall: String?
+    var onCall: () -> Void = {}
+    let result: FfiTerminateOutcome
+    let error: (any Error)?
+    let delay: Duration?
+
+    init(result: FfiTerminateOutcome, error: (any Error)? = nil, delay: Duration? = nil) {
+        self.result = result
+        self.error = error
+        self.delay = delay
+    }
+
+    var terminate: ActionState.Terminate {
+        { target, kind in try await self.record(target, kind) }
+    }
+
+    private func record(_ target: FfiTerminateTarget, _ kind: FfiTerminateKind) async throws -> FfiTerminateOutcome {
+        calls.append((target, kind))
+        onCall()
+        if let delay { try await Task.sleep(for: delay) }
+        if let error { throw error }
+        return result
+    }
+}
