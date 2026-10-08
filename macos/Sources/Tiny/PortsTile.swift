@@ -36,7 +36,14 @@ struct PortsTile: View {
             caveatText(caveat)
         case let .rows(rows, caveat):
             ScrollView {
-                LazyVStack(spacing: 3) { ForEach(rows) { row(for: $0) } }
+                LazyVStack(spacing: 3) { ForEach(rows) { row(for: $0) } }.padding(.bottom, 10)
+            }
+            // Fade the bottom edge so a partly visible row reads as "scroll for more".
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 18)
+                }
             }
             caveatText(caveat)
         }

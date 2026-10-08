@@ -54,7 +54,7 @@ struct ProcessDetailView: View {
                 .frame(width: 56, height: 56).accessibilityHidden(true)
             Text(group.name).font(.system(size: 22, weight: .semibold, design: .rounded))
                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            Text("\(group.members.count) processes · \(group.cpuText) CPU")
+            Text("\(group.members.count) \(group.members.count == 1 ? "process" : "processes") · \(group.cpuText) CPU")
                 .font(.caption).foregroundStyle(.secondary)
             Text("\(group.memoryText) resident memory").font(.caption).foregroundStyle(.secondary)
         }

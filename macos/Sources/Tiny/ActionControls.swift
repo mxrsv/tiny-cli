@@ -18,20 +18,31 @@ enum Finder {
 /// Menu items shared by the row context menus, the inspector `⋯` menus and the Ports tile.
 @MainActor enum ActionItems {
     @ViewBuilder static func app(_ group: AppGroup, actions: ActionState) -> some View {
-        if case let .ready(target) = AppQuit.resolve(group) {
-            Button("Quit \(group.name)") { actions.request(app: target) }.disabled(actions.isRunning)
-        } else {
-            Button("Quit unavailable") {}.disabled(true)
+        switch AppQuit.resolve(group) {
+        case .ready(let target) where !actions.isRunning:
+            Button("Quit \(group.name)") { actions.request(app: target) }
+        case .ready:
+            unavailable(ActionCopy.busy.text)
+        case .unavailable(let reason):
+            unavailable(reason)
         }
         Divider()
+        bundleItems(group)
+    }
+
+    /// Reveal and Copy Path for an app bundle, also used by the inspector `⋯` menu.
+    @ViewBuilder static func bundleItems(_ group: AppGroup) -> some View {
         reveal(group.bundlePath, title: "Reveal in Finder")
         Button("Copy Path") { group.bundlePath.map(Finder.copy) }.disabled(group.bundlePath == nil)
     }
 
     @ViewBuilder static func process(_ process: FfiProcessInfo, actions: ActionState) -> some View {
-        let blocked = ActionCopy.eligibility(process) != nil || actions.isRunning
-        Button("Quit") { actions.request(process, kind: .graceful) }.disabled(blocked)
-        Button("Force Quit…") { actions.request(process, kind: .force) }.disabled(blocked)
+        if let reason = ActionCopy.eligibility(process) ?? (actions.isRunning ? ActionCopy.busy.text : nil) {
+            unavailable(reason)
+        } else {
+            Button("Quit") { actions.request(process, kind: .graceful) }
+            Button("Force Quit…") { actions.request(process, kind: .force) }
+        }
         Divider()
         reveal(process.executablePath, title: "Reveal Executable in Finder")
         Button("Copy PID") { Finder.copy(String(process.pid)) }
@@ -40,6 +51,10 @@ enum Finder {
     @ViewBuilder static func group(_ group: AppGroup, actions: ActionState) -> some View {
         if group.isApplication { app(group, actions: actions) }
         else if let member = group.members.first { process(member, actions: actions) }
+    }
+
+    private static func unavailable(_ reason: String) -> some View {
+        Button("Quit unavailable — \(reason)") {}.disabled(true)
     }
 
     @ViewBuilder private static func reveal(_ path: String?, title: String) -> some View {
@@ -63,11 +78,7 @@ struct AppActionBar: View {
                 Button("Quit") { if case let .ready(target) = resolution { actions.request(app: target) } }
                     .disabled(actions.isRunning || resolution.reason != nil)
                     .help(resolution.reason ?? "Ask \(group.name) to quit")
-                Menu {
-                    let path = Finder.existing(group.bundlePath)
-                    Button("Reveal in Finder") { path.map(Finder.reveal) }.disabled(path == nil)
-                    Button("Copy Path") { group.bundlePath.map(Finder.copy) }.disabled(group.bundlePath == nil)
-                } label: { Image(systemName: "ellipsis") }
+                Menu { ActionItems.bundleItems(group) } label: { Image(systemName: "ellipsis") }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .accessibilityLabel("More actions for \(group.name)")
             }.controlSize(.small)

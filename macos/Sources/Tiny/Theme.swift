@@ -58,7 +58,7 @@ struct UsageWidget: View {
             HStack(spacing: 24) {
                 VStack(alignment: .leading, spacing: 9) {
                     Label(title, systemImage: icon).font(.system(size: 11, weight: .semibold))
-                        .tracking(1).foregroundStyle(.secondary)
+                        .tracking(1).foregroundStyle(.secondary).lineLimit(1)
                     Text(value).font(Theme.number(42)).lineLimit(1).minimumScaleFactor(0.6)
                         .contentTransition(.numericText())
                     Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)

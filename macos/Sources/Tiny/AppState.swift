@@ -31,12 +31,15 @@ final class AppState {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var pendingRefresh = false
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var portsDue = true
+    @ObservationIgnored private var lastPortsProbe: TimeInterval = -.infinity
+    private static let portsInterval: TimeInterval = 10
 
     init(engine: Engine = Engine(), markerDirectory: URL = InFlightMarker.defaultDirectory) {
         self.engine = engine
         actions = ActionState(terminate: { try await engine.terminate($0, kind: $1) },
                               quitApp: { await AppQuit.quit($0) }, marker: InFlightMarker(directory: markerDirectory))
-        actions.onFinish = { [weak self] in self?.requestRefresh() }
+        actions.onFinish = { [weak self] in self?.requestRefresh(includingPorts: true) }
     }
 
     var selectedGroup: AppGroup? { groups.first { $0.id == groupSelection } }
@@ -103,7 +106,10 @@ final class AppState {
         requestRefresh()
     }
 
-    func requestRefresh() {
+    /// Ports are probed every `portsInterval` or when asked: each probe also
+    /// samples, which would otherwise shorten the 2 s CPU interval.
+    func requestRefresh(includingPorts: Bool = false) {
+        if includingPorts { portsDue = true }
         guard !refreshing else { pendingRefresh = true; return }
         refreshing = true
         refreshTask = Task { [weak self] in await self?.refresh() }
@@ -150,7 +156,10 @@ final class AppState {
         catch { recordListError(error) }
         if !Task.isCancelled, let selection { await refreshDetail(selection, generation: generation) }
         else { detailLoading = false }
-        guard !Task.isCancelled else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !Task.isCancelled, portsDue || now - lastPortsProbe >= Self.portsInterval else { return }
+        portsDue = false
+        lastPortsProbe = now
         do {
             let result = try await engine.listeners()
             try Task.checkCancellation()

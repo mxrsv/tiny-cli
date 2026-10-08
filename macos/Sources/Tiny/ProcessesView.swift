@@ -12,10 +12,10 @@ struct ProcessesView: View {
                 NoticeBanner(notice: notice) { state.actions.dismissNotice() }
             }
             HStack(spacing: Theme.gap) {
-                UsageWidget(title: "CPU · WHOLE MACHINE", value: systemCPUText,
+                UsageWidget(title: "CPU · SYSTEM", value: systemCPUText,
                     subtitle: "All cores · 0–100%", fraction: state.systemUsage?.cpuPercent.map { Double($0) / 100 },
                     icon: "cpu", tint: Theme.accent, state: state.status).frame(width: Self.widgetWidth)
-                UsageWidget(title: "RAM · WHOLE MACHINE", value: systemRAMText,
+                UsageWidget(title: "RAM · SYSTEM", value: systemRAMText,
                     subtitle: systemRAMSubtitle, fraction: systemRAMFraction,
                     icon: "memorychip", tint: .cyan, state: state.status).frame(width: Self.widgetWidth)
                 PortsTile(state: state)
@@ -183,7 +183,7 @@ struct ProcessesView: View {
             } label: {
                 Label(state.paused ? "Resume" : "Pause", systemImage: state.paused ? "play.fill" : "pause.fill")
             }.help("Pause or resume automatic refresh every 2 seconds")
-            Button { state.requestRefresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+            Button { state.requestRefresh(includingPorts: true) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 .keyboardShortcut("r", modifiers: .command).disabled(state.refreshing)
         }
         .font(.system(size: 12))
