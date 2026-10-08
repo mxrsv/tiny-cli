@@ -90,13 +90,13 @@ impl CleanProvider for ChatCaches {
             if !is_dir_safe(&path) {
                 continue;
             }
-            if ctx.app_running(app)? {
+            if ctx.known_running(app) {
                 continue;
             }
             items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));
         }
         // Telegram: glob resolution.
-        let telegram_running = ctx.app_running(TELEGRAM_APP)?;
+        let telegram_running = ctx.known_running(TELEGRAM_APP);
         for tg_media in telegram_media_dirs(ctx, &h.join(TELEGRAM_GROUP_CONTAINERS)) {
             if telegram_running {
                 continue;

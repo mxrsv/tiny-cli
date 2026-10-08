@@ -66,6 +66,14 @@ impl<'a> ScanContext<'a> {
             .map_err(|detail| engine_error!("running-app check for {app} failed: {detail}"))
     }
 
+    /// Per-path gate during discovery: skip a path only when its app is
+    /// known to be running. An unknown answer keeps the path as a
+    /// candidate; execution re-checks it and refuses it if still unknown,
+    /// so one failed probe never hides the rest of the category.
+    pub fn known_running(&self, app: &str) -> bool {
+        self.probe.probe(app) == Ok(true)
+    }
+
     pub fn probe(&self) -> &dyn AppProbe {
         self.probe
     }

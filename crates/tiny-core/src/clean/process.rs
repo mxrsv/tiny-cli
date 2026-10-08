@@ -26,9 +26,10 @@ pub struct RunnerProbe<'r>(pub &'r dyn CommandRunner);
 
 impl AppProbe for RunnerProbe<'_> {
     fn probe(&self, name: &str) -> Result<bool, String> {
+        let pattern = escape_regex(name);
         let outcome = self
             .0
-            .output(PGREP, &["-x", name], PROBE_TIMEOUT)
+            .output(PGREP, &["-x", "--", &pattern], PROBE_TIMEOUT)
             .map_err(|e| e.to_string())?;
         match outcome.status {
             Some(0) => Ok(true),
@@ -39,6 +40,18 @@ impl AppProbe for RunnerProbe<'_> {
             )),
         }
     }
+}
+
+/// `pgrep` matches an extended regex; app names such as `c++` must match
+/// literally.
+fn escape_regex(name: &str) -> String {
+    name.chars().fold(String::new(), |mut out, c| {
+        if r"\.^$|?*+()[]{}".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+        out
+    })
 }
 
 impl AppProbe for PgrepChecker {
@@ -150,12 +163,12 @@ mod tests {
             })
         };
         let runner = MockRunner::new()
-            .with_output(PGREP, &["-x", "Xcode"], exit(0))
-            .with_output(PGREP, &["-x", "Mail"], exit(1))
-            .with_output(PGREP, &["-x", "Bad"], exit(2))
+            .with_output(PGREP, &["-x", "--", "Xcode"], exit(0))
+            .with_output(PGREP, &["-x", "--", "Mail"], exit(1))
+            .with_output(PGREP, &["-x", "--", "Bad"], exit(2))
             .with_output(
                 PGREP,
-                &["-x", "Slow"],
+                &["-x", "--", "Slow"],
                 Err(CommandError::Timeout {
                     bin: PGREP.into(),
                     timeout_ms: 5000,
@@ -180,6 +193,23 @@ mod tests {
         let _ = child.wait();
         assert_eq!(running, Ok(true));
         assert_eq!(absent, Ok(false));
+    }
+
+    #[test]
+    fn app_names_are_matched_literally_not_as_regex() {
+        use crate::runner::RealRunner;
+        assert_eq!(escape_regex("c++"), r"c\+\+");
+        assert_eq!(escape_regex("abc("), r"abc\(");
+        let mut child = Command::new("/bin/sleep").arg("5").spawn().unwrap();
+        let probe = RunnerProbe(&RealRunner);
+        let results: Vec<_> = ["c++", "[", "abc(", "sl..p", "-x"]
+            .iter()
+            .map(|name| probe.probe(name))
+            .collect();
+        let _ = child.kill();
+        let _ = child.wait();
+        // `[` alone is an invalid regex and `sl..p` would match `sleep`.
+        assert_eq!(results, vec![Ok(false); 5]);
     }
 
     #[test]

@@ -88,7 +88,7 @@ impl CleanProvider for StreamingCaches {
             if !is_dir_safe(&path) {
                 continue;
             }
-            if ctx.app_running(app)? {
+            if ctx.known_running(app) {
                 continue;
             }
             items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));

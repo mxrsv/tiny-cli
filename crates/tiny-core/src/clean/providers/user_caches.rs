@@ -62,7 +62,7 @@ fn list_caches(ctx: &ScanContext<'_>, root: &Path) -> Result<Vec<CleanItem>> {
             continue;
         }
         if let Some(app) = owning_app(&path) {
-            if ctx.app_running(app)? {
+            if ctx.known_running(app) {
                 continue;
             }
         }
@@ -98,12 +98,12 @@ mod tests {
     }
 
     #[test]
-    fn failed_probe_fails_the_category() {
+    fn a_failed_probe_keeps_the_path_for_execution_to_recheck() {
         use crate::clean::process::test_support::FailingProbe;
         let root = std::env::temp_dir().join(format!("tiny-user-caches-f-{}", std::process::id()));
         std::fs::create_dir_all(root.join("com.apple.Safari")).unwrap();
         let ctx = ScanContext::new(None, &FailingProbe);
-        assert!(list_caches(&ctx, &root).is_err());
+        assert_eq!(list_caches(&ctx, &root).unwrap().len(), 1);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
 }

@@ -95,13 +95,13 @@ impl CleanProvider for BrowserCaches {
             if !is_dir_safe(&path) {
                 continue;
             }
-            if ctx.app_running(app)? {
+            if ctx.known_running(app) {
                 continue;
             }
             items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));
         }
         // Firefox glob.
-        let firefox_running = ctx.app_running(FIREFOX_APP)?;
+        let firefox_running = ctx.known_running(FIREFOX_APP);
         for cache2 in firefox_cache_dirs(ctx, &h.join(FIREFOX_PROFILES_ROOT)) {
             if firefox_running {
                 continue;
