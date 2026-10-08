@@ -274,7 +274,7 @@ impl TinySession {
             .clone()
             .unwrap_or_else(|| (std::env::var_os("HOME").map(PathBuf::from), account_home()));
         trusted_home(env.as_deref(), account.as_deref())
-            .map_err(|detail| FfiError::Operation { detail })
+            .map_err(|detail| FfiError::UntrustedHome { detail })
     }
 
     /// Marks the preview consumed, under the lock, before any mutation.

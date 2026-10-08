@@ -9,8 +9,6 @@ struct CleanError: Equatable {
 
 /// User-facing copy for cleanup. Rust decides what is safe; Swift explains it.
 enum CleanCopy {
-    static let homeMismatchMarker = "HOME does not match the account home"
-
     static func bytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
@@ -75,8 +73,8 @@ enum CleanCopy {
             return CleanError(message: "Scan cancelled. Nothing was changed.", needsRescan: false)
         case .PreviewInvalid(let detail):
             return CleanError(message: "This review is no longer valid (\(detail)). Nothing was moved; scan again.", needsRescan: true)
-        case .Operation(let detail) where detail.contains(homeMismatchMarker):
-            return CleanError(message: "Tiny's HOME folder does not match your account's home folder, so cleanup is turned off. Nothing was scanned or moved. Open Tiny from Finder and try again.",
+        case .UntrustedHome(let detail):
+            return CleanError(message: "Tiny's HOME folder cannot be trusted (\(detail)), so cleanup is turned off. Nothing was scanned or moved. Open Tiny from Finder and try again.",
                               needsRescan: true)
         case .InvalidInput:
             return CleanError(message: "Select at least one item that can be moved to the Trash.", needsRescan: false)

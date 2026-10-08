@@ -75,7 +75,7 @@ import TinyEngine
     private static func errorStatesRequireRescan() async throws {
         for (error, needsRescan, phrase) in [(FfiError.Busy, true, "Another operation"),
                                               (.PreviewInvalid(detail: "preview already used"), true, "no longer valid"),
-                                              (.Operation(detail: "HOME does not match the account home"), true, "HOME folder")] {
+                                              (.UntrustedHome(detail: "HOME does not match the account home"), true, "HOME folder")] {
             let (clean, engine, _, cleanup) = make()
             defer { cleanup() }
             await clean.scan()?.value
@@ -89,7 +89,7 @@ import TinyEngine
         }
         let (clean, engine, _, cleanup) = make()
         defer { cleanup() }
-        await engine.failDiscover(with: .Operation(detail: "HOME does not match the account home"))
+        await engine.failDiscover(with: .UntrustedHome(detail: "HOME does not match the account home"))
         await clean.scan()?.value
         try check(clean.phase == .idle && clean.error?.message.contains("HOME folder") == true, "HOME mismatch on scan")
         await engine.failDiscover(with: nil)

@@ -140,6 +140,7 @@ enum ActionCopy {
         case .Unsupported(let detail): return "Not supported: \(detail)"
         case .AutomationDenied(let detail): return "macOS denied Automation access. \(detail)"
         case .PreviewInvalid(let detail): return "The preview is no longer valid. \(detail)"
+        case .UntrustedHome(let detail): return "Tiny's HOME folder cannot be trusted (\(detail))."
         }
     }
 }

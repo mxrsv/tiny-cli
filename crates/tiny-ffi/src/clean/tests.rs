@@ -354,7 +354,10 @@ fn an_untrusted_home_fails_before_any_scan_or_move() {
         session.clean_state().home_inputs = Some((Some(env.clone()), account.clone()));
         let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(Fixture::new("logs", &dir))];
         let scan = discover(&session, &providers);
-        assert!(matches!(scan, Err(FfiError::Operation { .. })), "{env:?}");
+        assert!(
+            matches!(scan, Err(FfiError::UntrustedHome { .. })),
+            "{env:?}"
+        );
         let trash = FakeTrash::default();
         let run = execute(
             &session,
@@ -363,7 +366,10 @@ fn an_untrusted_home_fails_before_any_scan_or_move() {
             &trash,
             &CancellationToken::default(),
         );
-        assert!(matches!(run, Err(FfiError::Operation { .. })), "{env:?}");
+        assert!(
+            matches!(run, Err(FfiError::UntrustedHome { .. })),
+            "{env:?}"
+        );
         assert!(trash.moved.lock().unwrap().is_empty());
         assert!(!session.is_busy());
     }

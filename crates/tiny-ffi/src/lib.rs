@@ -38,6 +38,10 @@ pub enum FfiError {
     /// A cleanup preview is unknown, expired, consumed or no longer matches disk.
     #[error("preview is no longer valid: {detail}")]
     PreviewInvalid { detail: String },
+    /// `HOME` is unset, relative, `/` or differs from the account home, so
+    /// cleanup neither scans nor moves anything.
+    #[error("untrusted home folder: {detail}")]
+    UntrustedHome { detail: String },
 }
 
 impl From<tiny_core::error::Error> for FfiError {
