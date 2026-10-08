@@ -71,7 +71,7 @@ enum CleanCopy {
         case .Busy:
             return CleanError(message: "Another operation is running, so nothing was \(operation == .scan ? "scanned" : "moved"). Scan again when it finishes.",
                               needsRescan: operation != .scan)
-        case .Cancelled:
+        case .Cancelled where operation == .scan:
             return CleanError(message: "Scan cancelled. Nothing was changed.", needsRescan: false)
         case .PreviewInvalid(let detail):
             return CleanError(message: "This review is no longer valid (\(detail)). Nothing was moved; scan again.", needsRescan: true)

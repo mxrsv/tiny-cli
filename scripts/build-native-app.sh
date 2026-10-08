@@ -35,6 +35,11 @@ codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 # Ad-hoc signing without hardened runtime needs no apple-events entitlement.
 /usr/libexec/PlistBuddy -c 'Print :NSAppleEventsUsageDescription' "$APP/Contents/Info.plist" >/dev/null
+# Test hooks must never reach the app (T5d).
+if grep -qi 'debugpanic' "$ROOT/macos/Sources/TinyEngine/tiny_ffi.swift" || LC_ALL=C grep -aqi 'debug_panic' "$APP/Contents/MacOS/Tiny"; then
+  printf 'Debug test hooks found in the bridge or binary: %s\n' "$APP" >&2
+  exit 1
+fi
 # The flag name is a short inline Swift string, so check a long hook-only message instead.
 if [ ${#SMOKE_FLAGS[@]} -eq 0 ] && LC_ALL=C grep -aq 'only an instance launched here may be quit' "$APP/Contents/MacOS/Tiny"; then
   printf 'Default build must not contain smoke hooks: %s\n' "$APP" >&2

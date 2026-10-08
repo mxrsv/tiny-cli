@@ -6,7 +6,7 @@ import TinyEngine
 /// Recording. Scenes only select, scan (read-only) or preview; nothing is
 /// confirmed or executed, and the marker directory is throwaway.
 extension Main {
-    enum SnapshotScene: String { case member, app, notice, minimum, clean, review, report }
+    enum SnapshotScene: String { case member, app, notice, minimum, clean, cleanAll = "clean-all", review, report }
 
     @MainActor static func snapshot(to url: URL, scene: SnapshotScene) async throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
@@ -15,7 +15,8 @@ extension Main {
         if scene == .notice { try InFlightMarker(directory: markers).begin(UUID(), summary: "Force Quit “sleep” (PID 4242)") }
         if scene == .report {
             try await render(CleanReportView(report: sampleReport()).padding(26).background(Backdrop()),
-                             size: NSSize(width: 1188, height: 640), to: url)
+                             size: NSSize(width: 1188, height: 1180), to: url)
+            print("Rendered a sample report with every outcome to \(url.path)")
             return
         }
         let child = Process()
@@ -29,8 +30,8 @@ extension Main {
         guard state.listError == nil, !state.processes.isEmpty else {
             throw NSError(domain: "Tiny", code: 4, userInfo: [NSLocalizedDescriptionKey: state.listError ?? "No process data"])
         }
-        if scene == .clean || scene == .review {
-            try await renderClean(state, review: scene == .review, to: url)
+        if scene == .clean || scene == .cleanAll || scene == .review {
+            try await renderClean(state, scene: scene, to: url)
             return
         }
         let ownPID = UInt32(ProcessInfo.processInfo.processIdentifier)
@@ -50,14 +51,16 @@ extension Main {
     }
 
     /// Real, read-only discovery; the review scene also asks Rust for a real preview.
-    @MainActor private static func renderClean(_ state: AppState, review: Bool, to url: URL) async throws {
+    @MainActor private static func renderClean(_ state: AppState, scene: SnapshotScene, to url: URL) async throws {
         state.screen = .clean
         await state.clean.scan()?.value
         guard state.clean.phase == .ready else {
             throw NSError(domain: "Tiny", code: 10, userInfo: [NSLocalizedDescriptionKey: state.clean.error?.message ?? "Scan failed"])
         }
-        guard review else {
-            try await render(ProcessesView(state: state, startsPolling: false), size: NSSize(width: 1240, height: 850), to: url)
+        guard scene == .review else {
+            // `clean-all` is tall enough to show every tile, including report-only ones.
+            let height: CGFloat = scene == .cleanAll ? 2400 : 850
+            try await render(ProcessesView(state: state, startsPolling: false), size: NSSize(width: 1240, height: height), to: url)
             print("Rendered \(state.clean.categories.count) cleanup categories to \(url.path)")
             return
         }

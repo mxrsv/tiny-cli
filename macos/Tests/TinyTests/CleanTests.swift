@@ -68,6 +68,8 @@ import TinyEngine
         try check(texts[1].contains("still in place") && texts[2].contains("check the Trash"), "failure says where the item is")
         try check(texts[3].contains("changed since the scan") && texts[4].contains("(Xcode)"), "skip reasons and details")
         try check(texts[5].contains("Not attempted"), "not attempted copy")
+        try check(CleanCopy.error(FfiError.Cancelled, during: .execute).message.hasPrefix("Cleanup failed")
+                  && CleanCopy.error(FfiError.Cancelled, during: .execute).needsRescan, "execute never reports a scan cancellation")
     }
 
     private static func errorStatesRequireRescan() async throws {
