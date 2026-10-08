@@ -18,9 +18,9 @@ releaseMode: phased
 status: complete
 completedAt: "2026-05-20"
 vision:
-  statement: "tiny = CleanMyMac minh bạch và miễn phí cho người dùng Mac kỹ thuật. macOS native app dọn dẹp + tối ưu hệ thống, engine Rust open-source, CLI+GUI share core."
+  statement: "tiny = CleanMyMac minh bạch cho người dùng Mac kỹ thuật. macOS native app dọn dẹp + tối ưu hệ thống, engine Rust open-source (open-core: Free + Pro subscription), CLI+GUI share core."
   differentiators:
-    - "Open-source, không subscription (#64)"
+    - "Open-core: engine + CLI open-source, app có Free + Pro subscription (đổi từ #64 ngày 2026-10-08)"
     - "Giải thích nguyên nhân, không chỉ hiển thị (#11/#31/#33/#37/#67)"
     - "focus + cleanup (#48) — tận dụng lệnh focus dọn nền trong session"
     - "Phô CLI thay vì giấu (#68) — transparency + dạy CLI"
@@ -77,7 +77,7 @@ this broader product record. Execution belongs in the
 
 Sản phẩm differentiates trên 5 trục độc lập, mỗi trục đối lập trực tiếp với CleanMyMac:
 
-1. **Open-source, không subscription** — mã nguồn công khai, miễn phí. Đối lập business model CleanMyMac.
+1. **Open-core** — engine `tiny-core` + CLI mã nguồn công khai, miễn phí; app có bản Free và gói Pro trả theo subscription (chốt 2026-10-08, thay cho "không subscription"). Tính năng Pro, giới hạn Free và giá chưa chốt — xem [landing page spec](../../docs/specs/2026-10-08-landing-page.md).
 2. **Giải thích nguyên nhân, không chỉ hiển thị** — phantom space (vì sao "ổ đầy mà không thấy file"), heat-by-age (file vừa to vừa cũ = ứng viên xoá), so sánh snapshot ("tuần này có gì đổi"), dự báo đầy ổ ("18 ngày nữa đầy, dọn sớm không?"). Trả lời _tại sao_, không chỉ _bao nhiêu_.
 3. **`focus` + cleanup** — tận dụng lệnh `tiny focus` sẵn có (timer Pomodoro): "trong lúc bạn focus 25 phút, app dọn nền". Lợi thế độc nhất không đối thủ nào có.
 4. **Phô CLI thay vì giấu** — mỗi action GUI hiển thị command `tiny ...` tương đương. Đồng thời tăng transparency (user thấy app đang làm gì) và dạy người dùng CLI.
@@ -116,7 +116,7 @@ Một Mac power user / developer cài `tiny` và đạt được những outcome
 
 ### Business Success
 
-Vì là open-source personal project, "business" success = adoption + community traction (không revenue):
+Các chỉ tiêu dưới đây viết khi `tiny` còn là open-source miễn phí: "business" success = adoption + community traction. Từ 2026-10-08 app theo mô hình open-core + Pro subscription; chỉ tiêu revenue/chuyển đổi Pro chưa đặt.
 
 - **3 tháng sau v1.0**: ≥ 500 unique installs (track qua Homebrew tap analytics + GitHub release downloads); ≥ 50 GitHub stars.
 - **6 tháng**: ≥ 2000 installs; ≥ 5 contributor PR đã merge (signal: codebase đủ dễ hiểu cho người ngoài đóng góp).
@@ -446,7 +446,7 @@ _Validation approach_: Đo "Copy CLI" event rate. Mục tiêu ≥ 40% user click
 
 | Competitor                       | Mô hình                                                    | Khoảng cách với `tiny`                                                                                                           |
 | -------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **CleanMyMac X**                 | Subscription $40/năm, closed-source, target user phổ thông | `tiny` open-source + miễn phí + target user kỹ thuật. Khác hoàn toàn target market                                               |
+| **CleanMyMac X**                 | Subscription $40/năm, closed-source, target user phổ thông | `tiny` engine + CLI open-source, app Free + Pro subscription, target user kỹ thuật. Khác hoàn toàn target market                 |
 | **OnyX**                         | Free, GUI utility cho macOS maintenance scripts            | `tiny` rộng hơn (cleanup + scan + monitor + focus), có quarantine/undo. OnyX không có cleanup phân loại                          |
 | **DaisyDisk / GrandPerspective** | Một-shot $10–$30, chỉ làm treemap                          | `tiny` có treemap (v1.1) + cleanup + monitor integrated. DaisyDisk không xoá được, GrandPerspective không giải thích nguyên nhân |
 | **ncdu / dust (CLI)**            | Free, CLI-only, không có GUI                               | `tiny` CLI parity với chúng nhưng có GUI option cho task lớn (treemap visual). ncdu/dust không có quarantine/undo                |
