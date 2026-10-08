@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::error::Result;
 
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
-use crate::clean::fs_safe::{dir_size_safe, walk_with};
+use crate::clean::fs_safe::{dir_size_checked, walk_with};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -39,11 +39,11 @@ impl CleanProvider for PythonCaches {
     fn available(&self) -> bool {
         !self.search_roots.is_empty()
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let mut items = Vec::new();
         for root in &self.search_roots {
-            for found in find_pycache(root) {
-                let size = dir_size_safe(&found);
+            for found in find_pycache(ctx, root) {
+                let size = dir_size_checked(&found, ctx);
                 items.push(CleanItem {
                     category_id: ID.to_string(),
                     category_label: LABEL.to_string(),
@@ -52,8 +52,8 @@ impl CleanProvider for PythonCaches {
                     risk: RiskLevel::Review,
                 });
             }
-            for found in find_orphan_venv(root, self.idle_days) {
-                let size = dir_size_safe(&found);
+            for found in find_orphan_venv(ctx, root, self.idle_days) {
+                let size = dir_size_checked(&found, ctx);
                 items.push(CleanItem {
                     category_id: ID.to_string(),
                     category_label: LABEL.to_string(),
@@ -72,9 +72,9 @@ impl CleanProvider for PythonCaches {
 
 /// Walks `root` symlink-safe and returns every `__pycache__` dir. Manifest
 /// check NOT required — pycache is always safe to delete.
-pub fn find_pycache(root: &Path) -> Vec<PathBuf> {
+pub fn find_pycache(ctx: &ScanContext<'_>, root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
-    walk_with(root, &ScanContext::unchecked(), |path, meta| {
+    walk_with(root, ctx, |path, meta| {
         if !meta.file_type().is_dir() {
             return false;
         }
@@ -90,9 +90,9 @@ pub fn find_pycache(root: &Path) -> Vec<PathBuf> {
 /// Walks `root` symlink-safe and returns every venv-style dir whose parent
 /// has a python manifest (pyproject.toml / setup.py / requirements.txt) AND
 /// the manifest is idle.
-pub fn find_orphan_venv(root: &Path, idle_days: u64) -> Vec<PathBuf> {
+pub fn find_orphan_venv(ctx: &ScanContext<'_>, root: &Path, idle_days: u64) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
-    walk_with(root, &ScanContext::unchecked(), |path, meta| {
+    walk_with(root, ctx, |path, meta| {
         if !meta.file_type().is_dir() {
             return false;
         }
@@ -155,7 +155,7 @@ mod tests {
         let root = tempdir("pyc");
         let nested = root.join("a/b/__pycache__");
         fs::create_dir_all(&nested).unwrap();
-        let found = find_pycache(&root);
+        let found = find_pycache(&ScanContext::unchecked(), &root);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0], nested);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
@@ -167,7 +167,7 @@ mod tests {
         let proj = root.join("ghost");
         fs::create_dir_all(proj.join("venv")).unwrap();
         // No manifest → must not be flagged.
-        let found = find_orphan_venv(&root, 0);
+        let found = find_orphan_venv(&ScanContext::unchecked(), &root, 0);
         assert!(found.is_empty());
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
@@ -179,14 +179,14 @@ mod tests {
         fs::create_dir_all(proj.join(".venv")).unwrap();
         let manifest = proj.join("pyproject.toml");
         fs::write(&manifest, b"[project]\nname=\"x\"\n").unwrap();
-        let fresh = find_orphan_venv(&root, 30);
+        let fresh = find_orphan_venv(&ScanContext::unchecked(), &root, 30);
         assert!(fresh.is_empty(), "fresh manifest must not flag");
         let old = std::time::SystemTime::now() - std::time::Duration::from_secs(31 * 86_400);
         std::fs::File::open(&manifest)
             .unwrap()
             .set_modified(old)
             .unwrap();
-        let stale = find_orphan_venv(&root, 30);
+        let stale = find_orphan_venv(&ScanContext::unchecked(), &root, 30);
         assert_eq!(stale.len(), 1);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "gradle-maven";
@@ -34,16 +35,23 @@ impl CleanProvider for GradleMaven {
         };
         GRADLE_SUBDIRS.iter().any(|s| h.join(s).exists()) || h.join(MAVEN_SUBDIR).exists()
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         let mut items = Vec::new();
         for sub in GRADLE_SUBDIRS {
-            items.extend(root_as_item(&h.join(sub), ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(
+                ctx,
+                &h.join(sub),
+                ID,
+                LABEL,
+                RiskLevel::Review,
+            ));
         }
         items.extend(root_as_item(
+            ctx,
             &h.join(MAVEN_SUBDIR),
             ID,
             LABEL,

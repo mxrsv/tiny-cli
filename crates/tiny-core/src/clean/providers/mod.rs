@@ -1,9 +1,12 @@
 use crate::engine_error;
 use crate::error::{Context, Result};
+use crate::runner::{CommandOutcome, CommandRunner, RealRunner, TOOL_TIMEOUT};
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
-use super::fs_safe::{dir_size_safe, remove_recursive_safe};
+use super::fs_safe::{dir_size_checked, list_children, remove_recursive_safe};
+use super::scan_context::ScanContext;
 use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 pub mod android_sdk;
@@ -102,7 +105,15 @@ pub trait CleanProvider {
         true
     }
 
-    fn discover(&self) -> Result<Vec<CleanItem>>;
+    /// Tool whose absence makes `available()` false. Checked discovery
+    /// reports such a provider as unavailable instead of omitting it.
+    fn required_tool(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Walks and running-app checks go through `ctx`, so they observe
+    /// cancellation and record what could not be read.
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>>;
 
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport>;
 }
@@ -114,6 +125,15 @@ pub trait CleanProvider {
 /// roots, ...) can read them at construction. M0 providers don't yet, but
 /// the param exists so M1+ can land without re-threading callers.
 pub fn all_providers(opts: &crate::options::CleanOptions) -> Vec<Box<dyn CleanProvider>> {
+    all_providers_with(opts, Arc::new(RealRunner))
+}
+
+/// `all_providers` with the runner tool-backed providers use, so the app can
+/// pass its own tool lookup and tests a mock.
+pub fn all_providers_with(
+    opts: &crate::options::CleanOptions,
+    runner: Arc<dyn CommandRunner>,
+) -> Vec<Box<dyn CleanProvider>> {
     vec![
         Box::new(user_logs::UserLogs),
         Box::new(xcode::XcodeDerivedData),
@@ -121,9 +141,9 @@ pub fn all_providers(opts: &crate::options::CleanOptions) -> Vec<Box<dyn CleanPr
         Box::new(xcode::XcodeArchives),
         Box::new(xcode::XcodeDeviceSupport),
         Box::new(dev_caches::CargoCache),
-        Box::new(dev_caches::NpmCache),
-        Box::new(dev_caches::PnpmStore),
-        Box::new(dev_caches::YarnCache),
+        Box::new(dev_caches::NpmCache::with_runner(runner.clone())),
+        Box::new(dev_caches::PnpmStore::with_runner(runner.clone())),
+        Box::new(dev_caches::YarnCache::with_runner(runner.clone())),
         Box::new(node_modules::NodeModules::new(opts.idle_days)),
         Box::new(python_caches::PythonCaches::new(opts.idle_days)),
         Box::new(rust_targets::RustTargets::new(opts.idle_days)),
@@ -132,19 +152,26 @@ pub fn all_providers(opts: &crate::options::CleanOptions) -> Vec<Box<dyn CleanPr
         Box::new(vscode::VsCode),
         Box::new(ios_simulators::IosSimulators),
         Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
-        Box::new(go_cache::GoCache::new()),
-        Box::new(docker::Docker::new()),
+        Box::new(go_cache::GoCache::with_runner(runner.clone())),
+        Box::new(docker::Docker::with_runner(runner.clone())),
         Box::new(downloads_old::DownloadsOld::new(opts.idle_days)),
-        Box::new(screenshots_old::ScreenshotsOld::new(opts.idle_days)),
+        Box::new(screenshots_old::ScreenshotsOld::with_runner(
+            opts.idle_days,
+            runner.clone(),
+        )),
         Box::new(mail_attachments::MailAttachments),
         Box::new(streaming_caches::StreamingCaches::new()),
         Box::new(chat_caches::ChatCaches::new()),
         Box::new(browser_caches::BrowserCaches::new()),
         Box::new(quarantine::Quarantine),
         Box::new(crash_reports::CrashReports),
-        Box::new(app_orphans::AppOrphans::new()),
-        Box::new(time_machine_local::TimeMachineLocal::new()),
-        Box::new(font_quicklook_caches::FontQuicklookCaches::new()),
+        Box::new(app_orphans::AppOrphans::with_runner(runner.clone())),
+        Box::new(time_machine_local::TimeMachineLocal::with_runner(
+            runner.clone(),
+        )),
+        Box::new(font_quicklook_caches::FontQuicklookCaches::with_runner(
+            runner,
+        )),
         Box::new(trash::TrashProvider),
     ]
 }
@@ -224,19 +251,15 @@ pub(crate) fn is_idle(manifest_path: &std::path::Path, idle_days: u64) -> bool {
 /// Lists immediate children of `root` as `CleanItem`s, sized via the
 /// symlink-safe walk. Returns empty when `root` does not exist.
 pub(crate) fn top_level_entries(
+    ctx: &ScanContext<'_>,
     root: &Path,
     category_id: &str,
     category_label: &str,
     risk: RiskLevel,
 ) -> Vec<CleanItem> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(root) {
-        Ok(it) => it,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let size = dir_size_safe(&path);
+    for path in list_children(root, ctx) {
+        let size = dir_size_checked(&path, ctx);
         out.push(CleanItem {
             category_id: category_id.to_string(),
             category_label: category_label.to_string(),
@@ -251,6 +274,7 @@ pub(crate) fn top_level_entries(
 /// Treats `root` itself as a single CleanItem (used for category-rooted
 /// providers like xcode-derived). Returns empty when missing.
 pub(crate) fn root_as_item(
+    ctx: &ScanContext<'_>,
     root: &Path,
     category_id: &str,
     category_label: &str,
@@ -259,7 +283,8 @@ pub(crate) fn root_as_item(
     if !root.exists() {
         return Vec::new();
     }
-    let size = dir_size_safe(root);
+    ctx.add_root(root);
+    let size = dir_size_checked(root, ctx);
     vec![CleanItem {
         category_id: category_id.to_string(),
         category_label: category_label.to_string(),
@@ -267,6 +292,19 @@ pub(crate) fn root_as_item(
         size,
         risk,
     }]
+}
+
+/// Runs a discovery tool through the bounded runner. A missing tool, spawn
+/// failure or timeout is an error (checked discovery reports the category
+/// as failed); the exit status is left to the provider.
+pub(crate) fn run_tool(
+    runner: &dyn CommandRunner,
+    bin: &str,
+    args: &[&str],
+) -> Result<CommandOutcome> {
+    runner
+        .output(bin, args, TOOL_TIMEOUT)
+        .map_err(|e| engine_error!("{e}"))
 }
 
 /// Default per-item executor used by every provider except Trash. Rejects

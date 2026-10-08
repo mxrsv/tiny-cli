@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, is_idle, root_as_item, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "android-sdk";
@@ -49,19 +50,25 @@ impl CleanProvider for AndroidSdk {
         };
         SAFE_DIRS.iter().any(|s| h.join(s).exists()) || h.join(SYSTEM_IMAGES).exists()
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         let mut items = Vec::new();
         for sub in SAFE_DIRS {
-            items.extend(root_as_item(&h.join(sub), ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(
+                ctx,
+                &h.join(sub),
+                ID,
+                LABEL,
+                RiskLevel::Review,
+            ));
         }
         // system-images is huge — only flag if present AND idle.
         let sys = h.join(SYSTEM_IMAGES);
         if sys.is_dir() && is_idle(&sys, self.idle_days) {
-            items.extend(root_as_item(&sys, ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(ctx, &sys, ID, LABEL, RiskLevel::Review));
         }
         Ok(items)
     }

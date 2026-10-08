@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "quarantine";
@@ -29,12 +30,13 @@ impl CleanProvider for Quarantine {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         Ok(root_as_item(
+            ctx,
             &h.join(QUARANTINE_FILE),
             ID,
             LABEL,

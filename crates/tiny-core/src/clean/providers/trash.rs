@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use super::CleanProvider;
-use crate::clean::fs_safe::dir_size_safe;
+use crate::clean::fs_safe::dir_size_checked;
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "trash";
@@ -22,7 +23,7 @@ impl CleanProvider for TrashProvider {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Destructive
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match std::env::var_os("HOME").map(PathBuf::from) {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -31,7 +32,7 @@ impl CleanProvider for TrashProvider {
         if !root.exists() {
             return Ok(Vec::new());
         }
-        let size = dir_size_safe(&root);
+        let size = dir_size_checked(&root, ctx);
         Ok(vec![CleanItem {
             category_id: ID.to_string(),
             category_label: LABEL.to_string(),

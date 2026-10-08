@@ -18,8 +18,9 @@ use std::sync::Arc;
 
 use crate::error::Result;
 
-use super::{execute_per_item, top_level_entries, CleanProvider};
+use super::{execute_per_item, run_tool, top_level_entries, CleanProvider};
 use crate::clean::runner::{CommandRunner, RealRunner};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "app-orphans";
@@ -42,7 +43,6 @@ impl AppOrphans {
             runner: Arc::new(RealRunner),
         }
     }
-    #[cfg(test)]
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
         Self { runner }
     }
@@ -50,10 +50,12 @@ impl AppOrphans {
     /// Builds the set of `CFBundleIdentifier` values for every `.app`
     /// bundle Spotlight knows about. Empty result → caller must refuse
     /// to flag anything.
-    fn installed_bundle_ids(&self) -> HashSet<String> {
-        let out = self.runner.run("mdfind", &[MDFIND_QUERY]);
-        if !out.success {
-            return HashSet::new();
+    /// A tool that cannot run (or times out) is an error: skipping one app
+    /// would make its support dir look orphaned.
+    fn installed_bundle_ids(&self) -> Result<HashSet<String>> {
+        let out = run_tool(self.runner.as_ref(), "mdfind", &[MDFIND_QUERY])?;
+        if !out.success() {
+            return Ok(HashSet::new());
         }
         let mut ids: HashSet<String> = HashSet::new();
         for line in out.stdout.lines() {
@@ -64,10 +66,12 @@ impl AppOrphans {
             // `defaults read <app>/Contents/Info CFBundleIdentifier`
             // (no .plist suffix — defaults reads .plist by convention).
             let plist_arg = format!("{}/Contents/Info", app_path);
-            let id_out = self
-                .runner
-                .run("defaults", &["read", &plist_arg, "CFBundleIdentifier"]);
-            if !id_out.success {
+            let id_out = run_tool(
+                self.runner.as_ref(),
+                "defaults",
+                &["read", &plist_arg, "CFBundleIdentifier"],
+            )?;
+            if !id_out.success() {
                 continue;
             }
             let id = id_out.stdout.trim();
@@ -75,7 +79,7 @@ impl AppOrphans {
                 ids.insert(id.to_string());
             }
         }
-        ids
+        Ok(ids)
     }
 }
 
@@ -95,19 +99,19 @@ impl CleanProvider for AppOrphans {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
-        let installed = self.installed_bundle_ids();
+        let installed = self.installed_bundle_ids()?;
         if installed.is_empty() {
             // Spotlight off / not indexed yet → refuse rather than flag everything.
 
             return Ok(Vec::new());
         }
         let support_dir = h.join(APP_SUPPORT);
-        let candidates = top_level_entries(&support_dir, ID, LABEL, RiskLevel::Review);
+        let candidates = top_level_entries(ctx, &support_dir, ID, LABEL, RiskLevel::Review);
         // Keep only entries whose dir name doesn't match any installed bundle id.
         let orphans: Vec<CleanItem> = candidates
             .into_iter()
@@ -146,19 +150,18 @@ mod tests {
     fn empty_mdfind_result_returns_empty_safely() {
         // mdfind returns success but zero lines → installed set empty →
         // discover() must return empty (not flag everything in Application Support).
-        let runner = Arc::new(MockRunner::new().with_response("mdfind", &[MDFIND_QUERY], true, ""));
+        let runner = Arc::new(MockRunner::new().with_exit("mdfind", &[MDFIND_QUERY], 0, ""));
         let p = AppOrphans::with_runner(runner);
-        let items = p.discover().unwrap();
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
         assert!(items.is_empty());
     }
 
     #[test]
     fn mdfind_failure_returns_empty_safely() {
         // mdfind exits non-zero → also empty.
-        let runner =
-            Arc::new(MockRunner::new().with_response("mdfind", &[MDFIND_QUERY], false, ""));
+        let runner = Arc::new(MockRunner::new().with_exit("mdfind", &[MDFIND_QUERY], 1, ""));
         let p = AppOrphans::with_runner(runner);
-        let items = p.discover().unwrap();
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
         assert!(items.is_empty());
     }
 
@@ -166,35 +169,35 @@ mod tests {
     fn installed_bundle_ids_collects_from_each_app() {
         let runner = Arc::new(
             MockRunner::new()
-                .with_response(
+                .with_exit(
                     "mdfind",
                     &[MDFIND_QUERY],
-                    true,
+                    0,
                     "/Applications/Safari.app\n/Applications/Music.app\n",
                 )
-                .with_response(
+                .with_exit(
                     "defaults",
                     &[
                         "read",
                         "/Applications/Safari.app/Contents/Info",
                         "CFBundleIdentifier",
                     ],
-                    true,
+                    0,
                     "com.apple.Safari\n",
                 )
-                .with_response(
+                .with_exit(
                     "defaults",
                     &[
                         "read",
                         "/Applications/Music.app/Contents/Info",
                         "CFBundleIdentifier",
                     ],
-                    true,
+                    0,
                     "com.apple.Music\n",
                 ),
         );
         let p = AppOrphans::with_runner(runner);
-        let ids = p.installed_bundle_ids();
+        let ids = p.installed_bundle_ids().unwrap();
         assert_eq!(ids.len(), 2);
         assert!(ids.contains("com.apple.Safari"));
         assert!(ids.contains("com.apple.Music"));
@@ -206,35 +209,35 @@ mod tests {
         // others still collected.
         let runner = Arc::new(
             MockRunner::new()
-                .with_response(
+                .with_exit(
                     "mdfind",
                     &[MDFIND_QUERY],
-                    true,
+                    0,
                     "/Applications/Good.app\n/Applications/Bad.app\n",
                 )
-                .with_response(
+                .with_exit(
                     "defaults",
                     &[
                         "read",
                         "/Applications/Good.app/Contents/Info",
                         "CFBundleIdentifier",
                     ],
-                    true,
+                    0,
                     "com.example.good",
                 )
-                .with_response(
+                .with_exit(
                     "defaults",
                     &[
                         "read",
                         "/Applications/Bad.app/Contents/Info",
                         "CFBundleIdentifier",
                     ],
-                    false,
+                    1,
                     "",
                 ),
         );
         let p = AppOrphans::with_runner(runner);
-        let ids = p.installed_bundle_ids();
+        let ids = p.installed_bundle_ids().unwrap();
         assert_eq!(ids.len(), 1);
         assert!(ids.contains("com.example.good"));
     }

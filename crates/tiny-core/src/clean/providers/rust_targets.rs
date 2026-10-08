@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::error::Result;
 
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
-use crate::clean::fs_safe::{dir_size_safe, walk_with};
+use crate::clean::fs_safe::{dir_size_checked, walk_with};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -37,11 +37,11 @@ impl CleanProvider for RustTargets {
     fn available(&self) -> bool {
         !self.search_roots.is_empty()
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let mut items = Vec::new();
         for root in &self.search_roots {
-            for found in find_rust_targets(root, self.idle_days) {
-                let size = dir_size_safe(&found);
+            for found in find_rust_targets(ctx, root, self.idle_days) {
+                let size = dir_size_checked(&found, ctx);
                 items.push(CleanItem {
                     category_id: ID.to_string(),
                     category_label: LABEL.to_string(),
@@ -61,9 +61,9 @@ impl CleanProvider for RustTargets {
 /// Walks `root` symlink-safe and returns every `target` dir whose parent
 /// has a `Cargo.toml` modified more than `idle_days` ago. Does NOT descend
 /// into a `target` dir once found.
-pub fn find_rust_targets(root: &Path, idle_days: u64) -> Vec<PathBuf> {
+pub fn find_rust_targets(ctx: &ScanContext<'_>, root: &Path, idle_days: u64) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
-    walk_with(root, &ScanContext::unchecked(), |path, meta| {
+    walk_with(root, ctx, |path, meta| {
         if !meta.file_type().is_dir() {
             return false;
         }
@@ -113,7 +113,7 @@ mod tests {
         let root = tempdir("orphan");
         let proj = root.join("ghost");
         fs::create_dir_all(proj.join("target")).unwrap();
-        let found = find_rust_targets(&root, 0);
+        let found = find_rust_targets(&ScanContext::unchecked(), &root, 0);
         assert!(found.is_empty());
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
@@ -130,10 +130,10 @@ mod tests {
         fs::create_dir_all(proj.join("target")).unwrap();
         let manifest = proj.join("Cargo.toml");
         fs::write(&manifest, b"[package]\nname = \"x\"\n").unwrap();
-        let fresh = find_rust_targets(&root, 30);
+        let fresh = find_rust_targets(&ScanContext::unchecked(), &root, 30);
         assert!(fresh.is_empty(), "fresh Cargo.toml must not flag");
         backdate(&manifest, 31);
-        let stale = find_rust_targets(&root, 30);
+        let stale = find_rust_targets(&ScanContext::unchecked(), &root, 30);
         assert_eq!(stale.len(), 1);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
@@ -147,7 +147,7 @@ mod tests {
         let manifest = proj.join("Cargo.toml");
         fs::write(&manifest, b"[package]\nname = \"x\"\n").unwrap();
         backdate(&manifest, 40);
-        let found = find_rust_targets(&root, 30);
+        let found = find_rust_targets(&ScanContext::unchecked(), &root, 30);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0], outer);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);

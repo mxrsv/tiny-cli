@@ -6,8 +6,16 @@
 //! `which`/`run` keep the original collapsing semantics that providers rely on.
 //! New code uses `output`, which is bounded by a timeout and reports failures
 //! as typed errors instead of empty results.
+//!
+//! A bare tool name is resolved once to an absolute path, which is then
+//! spawned. `ToolLookup` decides where to look: the CLI searches `PATH`
+//! only; the app also searches the Homebrew prefixes, because a
+//! Finder-launched app inherits a minimal `PATH`.
 
+use std::ffi::OsString;
 use std::io::{self, Read};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -50,6 +58,84 @@ pub enum CommandError {
 pub const STDERR_LIMIT: u64 = 4096;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// Bound for tool calls made while discovering cleanup candidates.
+pub const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Searched after `PATH` by the app (`ToolLookup::app`).
+pub const APP_FALLBACK_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+
+/// Where a bare tool name is searched.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolLookup {
+    /// `None` reads `PATH` from the environment at resolution time.
+    path: Option<OsString>,
+    fallback_dirs: Vec<PathBuf>,
+}
+
+impl ToolLookup {
+    /// The CLI: `PATH` only, as before the lookup policy existed.
+    pub fn path_only() -> Self {
+        Self::default()
+    }
+
+    /// The app: `PATH`, then the Homebrew prefixes.
+    pub fn app() -> Self {
+        Self::new(None, APP_FALLBACK_DIRS.iter().map(PathBuf::from).collect())
+    }
+
+    /// Explicit `PATH` and fallbacks, so tests never touch the process env.
+    pub fn new(path: Option<OsString>, fallback_dirs: Vec<PathBuf>) -> Self {
+        Self {
+            path,
+            fallback_dirs,
+        }
+    }
+
+    fn search_path(&self) -> Option<OsString> {
+        self.path.clone().or_else(|| std::env::var_os("PATH"))
+    }
+
+    /// Absolute path of `bin`, or `bin` itself when it already contains a
+    /// `/`. Resolution follows symlinks on purpose: Homebrew binaries are
+    /// symlinks into the Cellar. This locates trusted tools, not discovered
+    /// cleanup paths, so the clean module's `symlink_metadata` rule does
+    /// not apply here.
+    pub fn resolve(&self, bin: &str) -> Option<PathBuf> {
+        if bin.contains('/') {
+            return Some(PathBuf::from(bin));
+        }
+        let path = self.search_path().unwrap_or_default();
+        std::env::split_paths(&path)
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .chain(self.fallback_dirs.iter().cloned())
+            .map(|dir| dir.join(bin))
+            .find(|candidate| {
+                std::fs::metadata(candidate)
+                    .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            })
+    }
+
+    /// `PATH` for the child: tools found in a fallback dir (`npm`) often
+    /// look up siblings (`node`) through `PATH` themselves.
+    fn child_path(&self) -> Option<OsString> {
+        if self.fallback_dirs.is_empty() && self.path.is_none() {
+            return None;
+        }
+        let path = self.search_path().unwrap_or_default();
+        let dirs = std::env::split_paths(&path).chain(self.fallback_dirs.iter().cloned());
+        std::env::join_paths(dirs).ok()
+    }
+
+    fn command(&self, bin: &str) -> Option<Command> {
+        let resolved = self.resolve(bin)?;
+        let mut command = Command::new(resolved);
+        if let Some(path) = self.child_path() {
+            command.env("PATH", path);
+        }
+        Some(command)
+    }
+}
+
 pub trait CommandRunner: Send + Sync {
     /// Returns true iff `which <bin>` succeeds.
     fn which(&self, bin: &str) -> bool;
@@ -68,26 +154,56 @@ pub trait CommandRunner: Send + Sync {
     ) -> Result<CommandOutcome, CommandError>;
 }
 
+/// Runs tools found through `PATH` only (the CLI's behaviour).
 pub struct RealRunner;
 
 impl CommandRunner for RealRunner {
     fn which(&self, bin: &str) -> bool {
-        Command::new("which")
-            .arg(bin)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        ToolRunner::default().which(bin)
     }
 
     fn run(&self, bin: &str, args: &[&str]) -> CommandOutput {
-        let out = match Command::new(bin).args(args).output() {
+        ToolRunner::default().run(bin, args)
+    }
+
+    fn output(
+        &self,
+        bin: &str,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<CommandOutcome, CommandError> {
+        ToolRunner::default().output(bin, args, timeout)
+    }
+}
+
+/// Runs tools resolved through a `ToolLookup`.
+#[derive(Debug, Clone, Default)]
+pub struct ToolRunner {
+    lookup: ToolLookup,
+}
+
+impl ToolRunner {
+    pub fn new(lookup: ToolLookup) -> Self {
+        Self { lookup }
+    }
+}
+
+impl CommandRunner for ToolRunner {
+    fn which(&self, bin: &str) -> bool {
+        self.lookup.resolve(bin).is_some()
+    }
+
+    fn run(&self, bin: &str, args: &[&str]) -> CommandOutput {
+        let failed = CommandOutput {
+            success: false,
+            stdout: String::new(),
+        };
+        let Some(mut command) = self.lookup.command(bin) else {
+            return failed;
+        };
+        let out = match command.args(args).output() {
             Ok(o) => o,
-            Err(_) => {
-                return CommandOutput {
-                    success: false,
-                    stdout: String::new(),
-                }
-            }
+            Err(_) => return failed,
         };
         let stdout = String::from_utf8(out.stdout).unwrap_or_default();
         CommandOutput {
@@ -109,7 +225,11 @@ impl CommandRunner for RealRunner {
                 detail: error.to_string(),
             },
         };
-        let mut child = Command::new(bin)
+        let mut command = self
+            .lookup
+            .command(bin)
+            .ok_or_else(|| CommandError::NotFound(bin.to_string()))?;
+        let mut child = command
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -213,6 +333,18 @@ pub mod test_support {
             self.outputs.lock().unwrap().insert(key, result);
             self
         }
+        /// `output` exits with `status` and prints `stdout`.
+        pub fn with_exit(self, bin: &str, args: &[&str], status: i32, stdout: &str) -> Self {
+            self.with_output(
+                bin,
+                args,
+                Ok(CommandOutcome {
+                    status: Some(status),
+                    stdout: stdout.to_string(),
+                    stderr: String::new(),
+                }),
+            )
+        }
     }
 
     impl Default for MockRunner {
@@ -298,6 +430,73 @@ mod tests {
     fn output_rejects_non_utf8_stdout() {
         let result = RealRunner.output(SH, &["-c", "printf '\\377'"], GENEROUS);
         assert!(matches!(result, Err(CommandError::NonUtf8(_))));
+    }
+
+    fn fixture_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tiny-runner-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_tool(dir: &std::path::Path, name: &str, body: &str) {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn path_only_lookup_misses_a_tool_outside_path() {
+        let prefix = fixture_dir("prefix");
+        write_tool(&prefix, "tiny-fake-tool", "echo hi");
+        let empty = fixture_dir("empty-path");
+        let cli = ToolLookup::new(Some(empty.clone().into_os_string()), Vec::new());
+        assert_eq!(cli.resolve("tiny-fake-tool"), None);
+        let runner = ToolRunner::new(cli);
+        assert!(!runner.which("tiny-fake-tool"));
+        assert!(matches!(
+            runner.output("tiny-fake-tool", &[], GENEROUS),
+            Err(CommandError::NotFound(_))
+        ));
+        let _ = std::fs::remove_dir_all(&prefix);
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn app_lookup_finds_a_tool_in_a_fallback_prefix_and_extends_child_path() {
+        let prefix = fixture_dir("prefix");
+        write_tool(&prefix, "tiny-fake-tool", "echo \"$PATH\"");
+        let path = OsString::from("/usr/bin:/bin");
+        let app = ToolLookup::new(Some(path), vec![prefix.clone()]);
+        assert_eq!(
+            app.resolve("tiny-fake-tool"),
+            Some(prefix.join("tiny-fake-tool"))
+        );
+        let outcome = ToolRunner::new(app)
+            .output("tiny-fake-tool", &[], GENEROUS)
+            .expect("fixture tool runs");
+        assert!(outcome.success());
+        assert!(
+            outcome.stdout.trim().ends_with(prefix.to_str().unwrap()),
+            "child PATH includes the fallback dir: {}",
+            outcome.stdout
+        );
+        let _ = std::fs::remove_dir_all(&prefix);
+    }
+
+    #[test]
+    fn lookup_skips_non_executable_files() {
+        let prefix = fixture_dir("noexec");
+        std::fs::write(prefix.join("tiny-fake-tool"), "#!/bin/sh\n").unwrap();
+        let lookup = ToolLookup::new(Some(OsString::new()), vec![prefix.clone()]);
+        assert_eq!(lookup.resolve("tiny-fake-tool"), None);
+        let _ = std::fs::remove_dir_all(&prefix);
     }
 
     #[test]

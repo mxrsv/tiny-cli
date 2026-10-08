@@ -2,6 +2,7 @@ use crate::error::Result;
 use std::path::PathBuf;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const APP: &str = "Xcode";
@@ -28,13 +29,14 @@ impl CleanProvider for XcodeDerivedData {
     fn requires_app_quit(&self) -> Option<&'static str> {
         Some(APP)
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         let root = h.join("Library/Developer/Xcode/DerivedData");
         Ok(root_as_item(
+            ctx,
             &root,
             DERIVED_ID,
             DERIVED_LABEL,
@@ -64,13 +66,14 @@ impl CleanProvider for XcodeArchives {
     fn requires_app_quit(&self) -> Option<&'static str> {
         Some(APP)
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         let root = h.join("Library/Developer/Xcode/Archives");
         Ok(root_as_item(
+            ctx,
             &root,
             ARCHIVES_ID,
             ARCHIVES_LABEL,
@@ -100,13 +103,13 @@ impl CleanProvider for XcodeDeviceSupport {
     fn requires_app_quit(&self) -> Option<&'static str> {
         Some(APP)
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
         let root = h.join("Library/Developer/Xcode/iOS DeviceSupport");
-        Ok(root_as_item(&root, DS_ID, DS_LABEL, RiskLevel::Review))
+        Ok(root_as_item(ctx, &root, DS_ID, DS_LABEL, RiskLevel::Review))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, DS_ID)

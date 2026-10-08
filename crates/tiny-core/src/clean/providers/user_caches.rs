@@ -1,9 +1,9 @@
 use crate::error::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{execute_per_item, CleanProvider};
-use crate::clean::fs_safe::dir_size_safe;
-use crate::clean::process::{is_running, PgrepChecker, ProcessChecker};
+use crate::clean::fs_safe::{dir_size_checked, list_children};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "user-caches";
@@ -21,8 +21,12 @@ impl CleanProvider for UserCaches {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
-        Ok(discover_with_checker(&PgrepChecker))
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        let h = match home() {
+            Some(h) => h,
+            None => return Ok(Vec::new()),
+        };
+        list_caches(ctx, &h.join("Library/Caches"))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
@@ -34,31 +38,26 @@ fn home() -> Option<PathBuf> {
 }
 
 /// Heuristic: subdirectory names are typically reverse-DNS bundle ids
-/// (e.g. `com.apple.Safari`). We test the *last* segment via `pgrep -f`
-/// — best-effort, not airtight.
-fn discover_with_checker(checker: &dyn ProcessChecker) -> Vec<CleanItem> {
-    let h = match home() {
-        Some(h) => h,
-        None => return Vec::new(),
-    };
-    let root = h.join("Library/Caches");
-    let entries = match std::fs::read_dir(&root) {
-        Ok(it) => it,
-        Err(_) => return Vec::new(),
-    };
+/// (e.g. `com.apple.Safari`). The *last* segment is the app checked with
+/// `pgrep -x` — best-effort, not airtight.
+pub fn owning_app(path: &Path) -> Option<&str> {
+    let name = path.file_name()?.to_str()?;
+    let last_segment = name.rsplit('.').next().unwrap_or(name);
+    (!last_segment.is_empty()).then_some(last_segment)
+}
+
+fn list_caches(ctx: &ScanContext<'_>, root: &Path) -> Result<Vec<CleanItem>> {
     let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = match path.file_name().and_then(|s| s.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-        let last_segment = name.rsplit('.').next().unwrap_or(&name);
-        if !last_segment.is_empty() && checker.is_running(last_segment) {
+    for path in list_children(root, ctx) {
+        if path.file_name().and_then(|s| s.to_str()).is_none() {
             continue;
         }
-        let _ = is_running; // keep symbol referenced for non-test builds
-        let size = dir_size_safe(&path);
+        if let Some(app) = owning_app(&path) {
+            if ctx.app_running(app)? {
+                continue;
+            }
+        }
+        let size = dir_size_checked(&path, ctx);
         out.push(CleanItem {
             category_id: ID.to_string(),
             category_label: LABEL.to_string(),
@@ -67,7 +66,7 @@ fn discover_with_checker(checker: &dyn ProcessChecker) -> Vec<CleanItem> {
             risk: RiskLevel::Review,
         });
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -76,11 +75,26 @@ mod tests {
     use crate::clean::process::test_support::MockChecker;
 
     #[test]
-    fn discover_returns_empty_when_caches_missing() {
-        // We can't easily fake $HOME in-process without affecting other
-        // tests, so we just confirm the call does not panic and returns a
-        // Vec (whether empty or populated depends on the host).
-        let m = MockChecker::none();
-        let _ = discover_with_checker(&m);
+    fn caches_of_running_apps_are_skipped() {
+        let root = std::env::temp_dir().join(format!("tiny-user-caches-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("com.apple.Safari")).unwrap();
+        std::fs::create_dir_all(root.join("com.example.Idle")).unwrap();
+        let m = MockChecker::with_running(["Safari"]);
+        let ctx = ScanContext::new(None, &m);
+        let items = list_caches(&ctx, &root).unwrap();
+        let paths: Vec<_> = items.iter().map(|i| i.path.clone()).collect();
+        assert_eq!(paths, vec![root.join("com.example.Idle")]);
+        assert!(ctx.take_findings().roots.contains(&root));
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn failed_probe_fails_the_category() {
+        use crate::clean::process::test_support::FailingProbe;
+        let root = std::env::temp_dir().join(format!("tiny-user-caches-f-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("com.apple.Safari")).unwrap();
+        let ctx = ScanContext::new(None, &FailingProbe);
+        assert!(list_caches(&ctx, &root).is_err());
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
 }

@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use crate::error::Result;
 
-use super::{execute_per_item, is_idle, CleanProvider};
-use crate::clean::fs_safe::{dir_size_safe, is_dir_safe};
+use super::{execute_per_item, is_idle, run_tool, CleanProvider};
+use crate::clean::fs_safe::{dir_size_checked, is_dir_safe, list_children};
 use crate::clean::runner::{CommandRunner, RealRunner};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "screenshots-old";
@@ -29,25 +30,26 @@ impl ScreenshotsOld {
             runner: Arc::new(RealRunner),
         }
     }
-    #[cfg(test)]
     pub fn with_runner(idle_days: u64, runner: Arc<dyn CommandRunner>) -> Self {
         Self { idle_days, runner }
     }
-    fn screenshot_dir(&self) -> Option<PathBuf> {
-        let out = self
-            .runner
-            .run("defaults", &["read", "com.apple.screencapture", "location"]);
-        if out.success {
+    fn screenshot_dir(&self) -> Result<Option<PathBuf>> {
+        let out = run_tool(
+            self.runner.as_ref(),
+            "defaults",
+            &["read", "com.apple.screencapture", "location"],
+        )?;
+        if out.success() {
             let trimmed = out.stdout.trim();
             if !trimmed.is_empty() {
                 let p = PathBuf::from(expand_tilde(trimmed));
                 if is_dir_safe(&p) {
-                    return Some(p);
+                    return Ok(Some(p));
                 }
             }
         }
         // Fallback: ~/Desktop (macOS default).
-        home().map(|h| h.join("Desktop")).filter(|p| is_dir_safe(p))
+        Ok(home().map(|h| h.join("Desktop")).filter(|p| is_dir_safe(p)))
     }
 }
 
@@ -61,12 +63,12 @@ impl CleanProvider for ScreenshotsOld {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
-        let dir = match self.screenshot_dir() {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        let dir = match self.screenshot_dir()? {
             Some(d) => d,
             None => return Ok(Vec::new()),
         };
-        Ok(list_old_screenshots(&dir, self.idle_days))
+        Ok(list_old_screenshots(ctx, &dir, self.idle_days))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
@@ -91,14 +93,9 @@ fn expand_tilde(s: &str) -> String {
 
 /// Lists every file in `dir` whose name starts with a screenshot prefix
 /// AND whose mtime is older than `idle_days`. Non-recursive.
-pub fn list_old_screenshots(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
+pub fn list_old_screenshots(ctx: &ScanContext<'_>, dir: &Path, idle_days: u64) -> Vec<CleanItem> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(dir) {
-        Ok(it) => it,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for path in list_children(dir, ctx) {
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(_) => continue,
@@ -116,7 +113,7 @@ pub fn list_old_screenshots(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
         if !is_idle(&path, idle_days) {
             continue;
         }
-        let size = dir_size_safe(&path);
+        let size = dir_size_checked(&path, ctx);
         out.push(CleanItem {
             category_id: ID.to_string(),
             category_label: LABEL.to_string(),
@@ -160,11 +157,23 @@ mod tests {
     }
 
     #[test]
-    fn screenshot_dir_falls_back_to_desktop_on_error() {
-        // defaults read fails → fallback to ~/Desktop (which exists on macOS).
-        let runner = Arc::new(MockRunner::new()); // no response wired
+    fn screenshot_dir_is_an_error_when_defaults_cannot_run() {
+        let runner = Arc::new(MockRunner::new()); // no response → not found
         let p = ScreenshotsOld::with_runner(30, runner);
-        let dir = p.screenshot_dir();
+        assert!(p.screenshot_dir().is_err());
+    }
+
+    #[test]
+    fn screenshot_dir_falls_back_to_desktop_when_key_missing() {
+        // defaults read exits 1 (key unset) → fallback to ~/Desktop.
+        let runner = Arc::new(MockRunner::new().with_exit(
+            "defaults",
+            &["read", "com.apple.screencapture", "location"],
+            1,
+            "",
+        ));
+        let p = ScreenshotsOld::with_runner(30, runner);
+        let dir = p.screenshot_dir().unwrap();
         // We assume the test runner is on macOS where ~/Desktop exists. Fall
         // back path must end with "Desktop".
         if let Some(d) = dir {
@@ -183,7 +192,7 @@ mod tests {
         fs::write(&other, b"c").unwrap();
         backdate(&ss_old, 60);
         backdate(&other, 60); // old but wrong prefix → must skip
-        let found = list_old_screenshots(&dir, 30);
+        let found = list_old_screenshots(&ScanContext::unchecked(), &dir, 30);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, ss_old);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&dir);
@@ -193,14 +202,14 @@ mod tests {
     fn screenshot_dir_uses_defaults_value_when_present() {
         // Wire defaults to return a custom path that exists.
         let custom = tempdir("custom");
-        let runner = Arc::new(MockRunner::new().with_response(
+        let runner = Arc::new(MockRunner::new().with_exit(
             "defaults",
             &["read", "com.apple.screencapture", "location"],
-            true,
+            0,
             custom.to_str().unwrap(),
         ));
         let p = ScreenshotsOld::with_runner(30, runner);
-        let dir = p.screenshot_dir().unwrap();
+        let dir = p.screenshot_dir().unwrap().unwrap();
         // Compare canonical paths: macOS resolves /var → /private/var
         // symlink, so the returned path may differ from the literal value
         // returned by `defaults`. Canonicalize both sides.

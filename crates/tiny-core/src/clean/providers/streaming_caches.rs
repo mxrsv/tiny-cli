@@ -1,11 +1,10 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::error::Result;
 
 use super::{execute_per_item, root_as_item, CleanProvider};
 use crate::clean::fs_safe::is_dir_safe;
-use crate::clean::process::{PgrepChecker, ProcessChecker};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "streaming-caches";
@@ -33,19 +32,11 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-pub struct StreamingCaches {
-    checker: Arc<dyn ProcessChecker>,
-}
+pub struct StreamingCaches;
 
 impl StreamingCaches {
     pub fn new() -> Self {
-        Self {
-            checker: Arc::new(PgrepChecker),
-        }
-    }
-    #[cfg(test)]
-    pub fn with_checker(checker: Arc<dyn ProcessChecker>) -> Self {
-        Self { checker }
+        Self
     }
 }
 
@@ -65,7 +56,7 @@ impl CleanProvider for StreamingCaches {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -76,10 +67,10 @@ impl CleanProvider for StreamingCaches {
             if !is_dir_safe(&path) {
                 continue;
             }
-            if self.checker.is_running(app) {
+            if ctx.app_running(app)? {
                 continue;
             }
-            items.extend(root_as_item(&path, ID, LABEL, RiskLevel::Review));
+            items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));
         }
         Ok(items)
     }
@@ -106,9 +97,9 @@ mod tests {
         // can: assert that with Spotify running, discover() never
         // includes a Spotify-tagged CleanItem (size could be 0 if dir
         // missing, but the path string itself must not appear).
-        let mock = Arc::new(MockChecker::with_running(["Spotify"]));
-        let p = StreamingCaches::with_checker(mock);
-        let items = p.discover().unwrap();
+        let mock = MockChecker::with_running(["Spotify"]);
+        let ctx = ScanContext::new(None, &mock);
+        let items = StreamingCaches::new().discover(&ctx).unwrap();
         for item in &items {
             let s = item.path.to_string_lossy();
             assert!(

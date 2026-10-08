@@ -1,32 +1,25 @@
 use crate::error::Result;
 use std::path::PathBuf;
-use std::process::Command;
+use std::sync::Arc;
 
-use super::{execute_per_item, root_as_item, CleanProvider};
+use super::{execute_per_item, root_as_item, run_tool, CleanProvider};
+use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
+use crate::runner::CommandRunner;
 
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-fn which(bin: &str) -> bool {
-    Command::new("which")
-        .arg(bin)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-fn run_for_path(bin: &str, args: &[&str]) -> Option<PathBuf> {
-    let output = Command::new(bin).args(args).output().ok()?;
-    if !output.status.success() {
-        return None;
+/// Cache directory printed by a package manager. A tool that cannot run is
+/// an error; a non-zero exit or empty output means "no cache".
+fn tool_path(runner: &dyn CommandRunner, bin: &str, args: &[&str]) -> Result<Option<PathBuf>> {
+    let output = run_tool(runner, bin, args)?;
+    let s = output.stdout.trim();
+    if !output.success() || s.is_empty() {
+        return Ok(None);
     }
-    let s = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if s.is_empty() {
-        return None;
-    }
-    Some(PathBuf::from(s))
+    Ok(Some(PathBuf::from(s)))
 }
 
 // ---------- Cargo ----------
@@ -53,7 +46,7 @@ impl CleanProvider for CargoCache {
     fn available(&self) -> bool {
         home().map(|h| h.join(".cargo").is_dir()).unwrap_or(false)
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
             None => return Ok(Vec::new()),
@@ -63,6 +56,7 @@ impl CleanProvider for CargoCache {
         for sub in CARGO_SUBDIRS {
             let path = cargo.join(sub);
             items.extend(root_as_item(
+                ctx,
                 &path,
                 CARGO_ID,
                 CARGO_LABEL,
@@ -101,7 +95,15 @@ pub fn is_safe_cargo_path(path: &std::path::Path) -> bool {
 const NPM_ID: &str = "npm";
 const NPM_LABEL: &str = "npm cache";
 
-pub struct NpmCache;
+pub struct NpmCache {
+    runner: Arc<dyn CommandRunner>,
+}
+
+impl NpmCache {
+    pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
+        Self { runner }
+    }
+}
 
 impl CleanProvider for NpmCache {
     fn id(&self) -> &'static str {
@@ -114,14 +116,23 @@ impl CleanProvider for NpmCache {
         RiskLevel::Review
     }
     fn available(&self) -> bool {
-        which("npm")
+        self.runner.which("npm")
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
-        let path = match run_for_path("npm", &["config", "get", "cache"]) {
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("npm")
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        let path = match tool_path(self.runner.as_ref(), "npm", &["config", "get", "cache"])? {
             Some(p) => p,
             None => return Ok(Vec::new()),
         };
-        Ok(root_as_item(&path, NPM_ID, NPM_LABEL, RiskLevel::Review))
+        Ok(root_as_item(
+            ctx,
+            &path,
+            NPM_ID,
+            NPM_LABEL,
+            RiskLevel::Review,
+        ))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, NPM_ID)
@@ -133,7 +144,15 @@ impl CleanProvider for NpmCache {
 const PNPM_ID: &str = "pnpm";
 const PNPM_LABEL: &str = "pnpm store";
 
-pub struct PnpmStore;
+pub struct PnpmStore {
+    runner: Arc<dyn CommandRunner>,
+}
+
+impl PnpmStore {
+    pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
+        Self { runner }
+    }
+}
 
 impl CleanProvider for PnpmStore {
     fn id(&self) -> &'static str {
@@ -146,14 +165,23 @@ impl CleanProvider for PnpmStore {
         RiskLevel::Review
     }
     fn available(&self) -> bool {
-        which("pnpm")
+        self.runner.which("pnpm")
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
-        let path = match run_for_path("pnpm", &["store", "path"]) {
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("pnpm")
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        let path = match tool_path(self.runner.as_ref(), "pnpm", &["store", "path"])? {
             Some(p) => p,
             None => return Ok(Vec::new()),
         };
-        Ok(root_as_item(&path, PNPM_ID, PNPM_LABEL, RiskLevel::Review))
+        Ok(root_as_item(
+            ctx,
+            &path,
+            PNPM_ID,
+            PNPM_LABEL,
+            RiskLevel::Review,
+        ))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, PNPM_ID)
@@ -165,7 +193,15 @@ impl CleanProvider for PnpmStore {
 const YARN_ID: &str = "yarn";
 const YARN_LABEL: &str = "yarn cache";
 
-pub struct YarnCache;
+pub struct YarnCache {
+    runner: Arc<dyn CommandRunner>,
+}
+
+impl YarnCache {
+    pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
+        Self { runner }
+    }
+}
 
 impl CleanProvider for YarnCache {
     fn id(&self) -> &'static str {
@@ -178,14 +214,23 @@ impl CleanProvider for YarnCache {
         RiskLevel::Review
     }
     fn available(&self) -> bool {
-        which("yarn")
+        self.runner.which("yarn")
     }
-    fn discover(&self) -> Result<Vec<CleanItem>> {
-        let path = match run_for_path("yarn", &["cache", "dir"]) {
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("yarn")
+    }
+    fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        let path = match tool_path(self.runner.as_ref(), "yarn", &["cache", "dir"])? {
             Some(p) => p,
             None => return Ok(Vec::new()),
         };
-        Ok(root_as_item(&path, YARN_ID, YARN_LABEL, RiskLevel::Review))
+        Ok(root_as_item(
+            ctx,
+            &path,
+            YARN_ID,
+            YARN_LABEL,
+            RiskLevel::Review,
+        ))
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, YARN_ID)
