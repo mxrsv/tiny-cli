@@ -1,9 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# --smoke-hooks compiles development-only checks (SmokeHooks.swift); the default build excludes them.
+SMOKE_FLAGS=()
+case "${1:-}" in
+  "") ;;
+  --smoke-hooks) SMOKE_FLAGS=(-Xswiftc -DTINY_SMOKE_HOOKS) ;;
+  *) printf 'Usage: %s [--smoke-hooks]\n' "$0" >&2; exit 2 ;;
+esac
 "$ROOT/scripts/build-tiny-ffi.sh"
-swift build --package-path "$ROOT/macos" -c release
-BIN="$(swift build --package-path "$ROOT/macos" -c release --show-bin-path)"
+swift build --package-path "$ROOT/macos" -c release ${SMOKE_FLAGS[@]+"${SMOKE_FLAGS[@]}"}
+BIN="$(swift build --package-path "$ROOT/macos" -c release ${SMOKE_FLAGS[@]+"${SMOKE_FLAGS[@]}"} --show-bin-path)"
 APP="$ROOT/macos/.build/Tiny Dev.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN/Tiny" "$APP/Contents/MacOS/Tiny"
@@ -25,4 +32,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
+# The flag name is a short inline Swift string, so check a long hook-only message instead.
+if [ ${#SMOKE_FLAGS[@]} -eq 0 ] && LC_ALL=C grep -aq 'only an instance launched here may be quit' "$APP/Contents/MacOS/Tiny"; then
+  printf 'Default build must not contain smoke hooks: %s\n' "$APP" >&2
+  exit 1
+fi
 printf 'Built and verified: %s\n' "$APP"

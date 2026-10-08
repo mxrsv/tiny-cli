@@ -26,14 +26,14 @@ struct TinyNativeApp: App {
                     throw CocoaError(.fileWriteInvalidFileName)
                 }
                 try await snapshot(to: URL(fileURLWithPath: arguments[2]), scene: scene)
-            } else if arguments.count == 3 && arguments[1] == "--quit-test-app" {
-                try await quitTestApp(arguments[2])
+            } else if try await runSmokeHook(arguments) {
+                return
             } else if arguments.count == 1 || arguments.dropFirst().allSatisfy({ $0.hasPrefix("-psn_") }) {
                 NSApplication.shared.setActivationPolicy(.regular)
                 TinyNativeApp.main()
             } else {
                 throw NSError(domain: "Tiny", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                    "Usage: Tiny [--smoke-test | --snapshot /absolute/path.png [member|app|notice|minimum] | --quit-test-app /tmp/Name.app]"])
+                    "Usage: Tiny [--smoke-test | --snapshot /absolute/path.png [member|app|notice|minimum]]"])
             }
         } catch {
             FileHandle.standardError.write(Data("Tiny: \(error.localizedDescription)\n".utf8))
@@ -113,43 +113,6 @@ struct TinyNativeApp: App {
         try await Task.sleep(for: .seconds(1))
         try withExtendedLifetime(window) { try writeSnapshot(host: host, to: url) }
         print("Rendered \(state.processes.count) live processes to \(url.path)")
-    }
-
-    /// O1(a) check: launches a disposable app from /tmp, then quits only that
-    /// instance through the production Quit path. Refuses an already-running app.
-    @MainActor private static func quitTestApp(_ path: String) async throws {
-        let url = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
-        // Foundation reports /private/tmp as /tmp after resolving symlinks.
-        guard url.path.hasPrefix("/tmp/") || url.path.hasPrefix("/private/tmp/"), url.pathExtension == "app",
-              let bundleID = Bundle(url: url)?.bundleIdentifier else {
-            throw failure(6, "Expected an .app bundle under /tmp")
-        }
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else {
-            throw failure(7, "\(bundleID) is already running; only an instance launched here may be quit")
-        }
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-        configuration.createsNewApplicationInstance = true
-        let started = Date()
-        let app = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        guard app.bundleURL?.resolvingSymlinksInPath().standardizedFileURL.path == url.path,
-              let bundlePath = app.bundleURL?.standardizedFileURL.path,
-              let launchDate = app.launchDate, launchDate.timeIntervalSince(started) > -1 else {
-            throw failure(8, "The launched app does not match \(url.path)")
-        }
-        let deadline = ContinuousClock.now + .seconds(10)
-        while !app.isFinishedLaunching && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(100)) }
-        let outcome = await AppQuit.quit(AppQuitTarget(name: app.localizedName ?? bundleID, bundlePath: bundlePath,
-                                                       pid: app.processIdentifier, launchDate: launchDate))
-        guard outcome == .exited else {
-            app.forceTerminate() // Cleanup of the instance launched above only.
-            throw failure(9, "Quit outcome \(outcome) for PID \(app.processIdentifier)")
-        }
-        print("PASS: launched \(bundleID) PID \(app.processIdentifier) from \(url.path); NSRunningApplication.terminate() → exited")
-    }
-
-    private static func failure(_ code: Int, _ message: String) -> NSError {
-        NSError(domain: "Tiny", code: code, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     @MainActor private static func writeSnapshot(host: NSView, to url: URL) throws {
