@@ -13,7 +13,7 @@ import TinyEngine
             print("PASS: 5 process state checks")
             try AppGroupTests.run()
             try await ActionTests.run()
-            print("PASS: 23 total native checks")
+            print("PASS: 24 total native checks")
         } catch {
             FileHandle.standardError.write(Data("FAIL: \(error)\n".utf8))
             exit(1)

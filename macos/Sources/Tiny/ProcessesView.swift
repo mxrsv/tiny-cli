@@ -31,7 +31,14 @@ struct ProcessesView: View {
         .background(Backdrop())
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
-        .modifier(ActionConfirmation(actions: state.actions))
+        .onChange(of: state.actions.pending?.id) { _, id in
+            guard id != nil, let request = state.actions.pending else { return }
+            guard let window = NSApp.keyWindow ?? NSApp.mainWindow, window.attachedSheet == nil else {
+                state.actions.cancel()
+                return
+            }
+            ConfirmationAlert.present(request, on: window, actions: state.actions)
+        }
         .task { if startsPolling { await state.run() } }
     }
 

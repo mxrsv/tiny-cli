@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import TinyEngine
 
 @MainActor enum ActionTests {
@@ -10,7 +10,8 @@ import TinyEngine
         try listenersStates()
         try appQuitResolution()
         try await appQuitStillRunningNeverEscalates()
-        print("PASS: 7 action checks (copy, confirmation, busy, marker, listeners, app resolution, app quit)")
+        try await alertOrderKeysAndSingleAction()
+        print("PASS: 8 action checks (copy, confirmation, busy, marker, listeners, app resolution, app quit, alert)")
     }
 
     private static func outcomeAndRefusalCopy() throws {
@@ -180,6 +181,34 @@ import TinyEngine
         await actions.pending.flatMap { actions.confirm($0) }?.value
         try check(quits == [target] && recorder.calls.isEmpty, "one app quit request; no process signal")
         try check(actions.notice?.text.contains("save dialog") == true, "still open is reported honestly")
+    }
+
+    private static func alertOrderKeysAndSingleAction() async throws {
+        let recorder = Recorder(result: .exited)
+        let (actions, _, cleanup) = makeActions(recorder)
+        defer { cleanup() }
+        let row = process(91, name: "node")
+        actions.request(row, kind: .force)
+        guard let force = actions.pending else { throw CheckFailure(message: "force pending") }
+        let alert = ConfirmationAlert.make(force)
+        try check(alert.messageText == force.title && alert.informativeText == force.message, "alert names target and consequence")
+        try check(alert.buttons.map(\.title) == ["Cancel", "Force Quit"], "Cancel first, action second")
+        try check(alert.buttons.map(\.keyEquivalent) == ["\r", ""], "Return is Cancel; the action has no key equivalent")
+        try check(alert.buttons[1].hasDestructiveAction && !alert.buttons[0].hasDestructiveAction, "Force Quit styled destructive")
+        try check(!ConfirmationAlert.make(ActionCopy.request(row, kind: .graceful)).buttons[1].hasDestructiveAction, "Quit not destructive")
+        let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                      characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)
+        let returnKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                         characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)
+        try check(escape.map(ConfirmationAlert.isEscape) == true && returnKey.map(ConfirmationAlert.isEscape) == false, "Escape detected")
+        ConfirmationAlert.finish(.alertFirstButtonReturn, request: force, actions: actions)
+        try check(actions.pending == nil && recorder.calls.isEmpty, "Cancel/Escape response sends nothing")
+        try check(ConfirmationAlert.finish(.alertSecondButtonReturn, request: force, actions: actions) == nil, "cancelled request cannot run later")
+        actions.request(row, kind: .force)
+        guard let again = actions.pending else { throw CheckFailure(message: "force pending again") }
+        await ConfirmationAlert.finish(.alertSecondButtonReturn, request: again, actions: actions)?.value
+        await ConfirmationAlert.finish(.alertSecondButtonReturn, request: again, actions: actions)?.value
+        try check(recorder.calls.map(\.1) == [.force], "action response runs exactly once")
     }
 
     private static func makeActions(_ recorder: Recorder) -> (ActionState, InFlightMarker, () -> Void) {

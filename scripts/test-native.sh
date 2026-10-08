@@ -17,6 +17,7 @@ swiftc -swift-version 6 -parse-as-library \
   "$ROOT/macos/Sources/Tiny/ProcessActions.swift" \
   "$ROOT/macos/Sources/Tiny/AppQuit.swift" \
   "$ROOT/macos/Sources/Tiny/PortsModel.swift" \
+  "$ROOT/macos/Sources/Tiny/ConfirmationAlert.swift" \
   "$ROOT/macos/Tests/TinyEngineTests/EngineTests.swift" \
   "$ROOT/macos/Tests/TinyTests/ProcessStateTests.swift" \
   "$ROOT/macos/Tests/TinyTests/AppGroupTests.swift" \

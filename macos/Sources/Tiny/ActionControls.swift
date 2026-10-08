@@ -102,22 +102,6 @@ struct ProcessActionBar: View {
     }
 }
 
-/// Native confirmation: names target and consequence; Cancel is the default and Esc.
-struct ActionConfirmation: ViewModifier {
-    let actions: ActionState
-
-    func body(content: Content) -> some View {
-        content.alert(actions.pending?.title ?? "", isPresented: Binding(
-            get: { actions.pending != nil }, set: { if !$0 { actions.cancel() } }
-        ), presenting: actions.pending) { request in
-            Button("Cancel", role: .cancel) { actions.cancel() }.keyboardShortcut(.defaultAction)
-            Button(request.confirmLabel, role: request.isDestructive ? .destructive : nil) { actions.confirm(request) }
-        } message: { request in
-            Text(request.message)
-        }
-    }
-}
-
 /// Result of the last action. Unknown outcomes stay until dismissed.
 struct NoticeBanner: View {
     let notice: ActionNotice
