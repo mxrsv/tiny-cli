@@ -14,7 +14,6 @@ use crate::engine_error;
 use crate::error::Result;
 
 use super::process::{AppProbe, PgrepChecker};
-use super::trash_plan::home_dir;
 
 /// Entries under one walked path that could not be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +35,8 @@ pub struct ScanFindings {
 pub struct ScanContext<'a> {
     cancel: Option<&'a AtomicBool>,
     probe: &'a dyn AppProbe,
-    home: Option<PathBuf>,
+    /// Set by the desktop only: refuse protected paths at discovery.
+    protected_home: Option<PathBuf>,
     findings: RefCell<ScanFindings>,
 }
 
@@ -47,18 +47,23 @@ impl<'a> ScanContext<'a> {
         Self {
             cancel,
             probe,
-            home: home_dir(),
+            protected_home: None,
             findings: RefCell::new(ScanFindings::default()),
         }
     }
 
-    /// Replaces the home folder read from `HOME` (tests never touch env).
-    pub fn with_home(self, home: Option<PathBuf>) -> Self {
-        Self { home, ..self }
+    /// Desktop discovery: leave out `/`, `home`, its ancestors and
+    /// tool-printed paths outside `home` (`trash_plan::protected_reason`).
+    /// The CLI never sets this, so it lists exactly what it always did.
+    pub fn refusing_protected_paths(self, home: PathBuf) -> Self {
+        Self {
+            protected_home: Some(home),
+            ..self
+        }
     }
 
-    pub fn home(&self) -> Option<&Path> {
-        self.home.as_deref()
+    pub fn protected_home(&self) -> Option<&Path> {
+        self.protected_home.as_deref()
     }
 
     /// The CLI's context: never cancelled, and a failed `pgrep` counts as

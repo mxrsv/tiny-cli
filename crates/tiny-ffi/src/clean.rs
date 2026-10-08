@@ -211,8 +211,11 @@ impl TinySession {
             state.preview = None;
         }
         let report = |p: tiny_core::progress::Progress| progress.on_progress(p.into());
-        let home = self.clean_home();
-        let ctx = ScanContext::new(Some(token.flag()), probe).with_home(home);
+        let ctx = ScanContext::new(Some(token.flag()), probe);
+        let ctx = match self.clean_home() {
+            Some(home) => ctx.refusing_protected_paths(home),
+            None => ctx,
+        };
         let checked = discover_checked(providers, &ctx, Some(&report));
         if checked.cancelled {
             return Err(FfiError::Cancelled);

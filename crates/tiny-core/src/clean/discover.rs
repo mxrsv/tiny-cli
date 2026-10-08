@@ -52,8 +52,8 @@ pub enum CategoryOutcome {
         unreadable: Vec<(PathBuf, Unreadable)>,
         /// Directories discovery listed or walked for this category.
         roots: Vec<PathBuf>,
-        /// Paths the provider found that must never be cleaned, with why
-        /// (`trash_plan::protected_reason`).
+        /// Paths left out because they must never be cleaned, with why
+        /// (`trash_plan::protected_reason`). Desktop discovery only.
         refused: Vec<(PathBuf, String)>,
     },
     /// The owning app is running, so the category was not scanned.
@@ -230,7 +230,8 @@ pub fn discover_checked(
         }
         let outcome = match outcome {
             Some(Ok(items)) => found(items, findings, |path| {
-                protected_reason(path, ctx.home(), provider.roots_from_tool_output())
+                let home = ctx.protected_home()?;
+                protected_reason(path, Some(home), provider.roots_from_tool_output())
             }),
             Some(Err(outcome)) => outcome,
             None => continue,
@@ -645,9 +646,9 @@ mod tests {
         }
 
         #[test]
-        fn a_tool_printing_home_or_a_path_outside_it_is_refused() {
+        fn a_tool_printing_home_or_a_path_outside_it_is_refused_on_the_desktop_only() {
             let home = fixture_root("tool-home");
-            let printed = |path: &Path| {
+            let printed = |path: &Path, desktop: bool| {
                 let runner = MockRunner::new().with_which("fake-tool").with_exit(
                     "fake-tool",
                     &["path"],
@@ -655,19 +656,29 @@ mod tests {
                     &format!("{}\n", path.display()),
                 );
                 let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(ToolFixture(runner))];
-                let ctx = ScanContext::unchecked().with_home(Some(home.clone()));
+                let ctx = ScanContext::unchecked();
+                let ctx = if desktop {
+                    ctx.refusing_protected_paths(home.clone())
+                } else {
+                    ctx
+                };
                 let report = discover_checked(&providers, &ctx, None);
                 match outcome(&report, "tool").clone() {
                     CategoryOutcome::Found { items, refused, .. } => (items.len(), refused),
                     other => panic!("unexpected {other:?}"),
                 }
             };
-            let (found, refused) = printed(&home);
+            let (found, refused) = printed(&home, true);
             assert_eq!((found, refused[0].1.as_str()), (0, "the home folder"));
-            let (found, refused) = printed(&std::env::temp_dir());
-            assert_eq!(found, 0);
-            assert_eq!(refused.len(), 1, "an ancestor or outside path");
-            let (found, refused) = printed(&home.join("child"));
+            // Outside `home` (an ancestor here): refused on the desktop ...
+            let (found, refused) = printed(&std::env::temp_dir(), true);
+            assert_eq!((found, refused.len()), (0, 1));
+            // ... but the CLI lists it exactly as before.
+            let (found, refused) = printed(&std::env::temp_dir(), false);
+            assert_eq!((found, refused.len()), (1, 0));
+            let (found, refused) = printed(&home, false);
+            assert_eq!((found, refused.len()), (1, 0));
+            let (found, refused) = printed(&home.join("child"), true);
             assert_eq!((found, refused.len()), (1, 0));
             let _ = crate::clean::fs_safe::remove_recursive_safe(&home);
         }
