@@ -562,6 +562,33 @@ fn forged_expired_and_replaced_previews_fail_without_mutation() {
 }
 
 #[test]
+fn a_preview_expires_by_wall_clock_even_if_the_mac_slept() {
+    let dir = fixture_dir("sleep", &["a"], 1);
+    let session = TinySession::new();
+    let preview = preview_all(&session, &dir);
+    // Sleep stops `Instant`; only the wall-clock deadline has passed.
+    session
+        .clean_state()
+        .preview
+        .as_mut()
+        .unwrap()
+        .expires_at_wall = SystemTime::now() - Duration::from_secs(1);
+    let trash = FakeTrash::default();
+    let result = execute(
+        &session,
+        &preview.preview_id,
+        &dir,
+        &trash,
+        &CancellationToken::default(),
+    );
+    assert!(
+        matches!(result, Err(FfiError::PreviewInvalid { detail }) if detail.contains("expired"))
+    );
+    assert!(trash.moved.lock().unwrap().is_empty());
+    remove(&dir);
+}
+
+#[test]
 fn partial_results_report_each_item() {
     let dir = fixture_dir("partial", &["edited", "fails", "ok", "swapped"], 4);
     let session = TinySession::new();

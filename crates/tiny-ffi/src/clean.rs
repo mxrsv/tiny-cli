@@ -9,7 +9,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use tiny_core::clean::checked_execute::{
     execute_checked, CheckedExecReport, ExecContext, ItemOutcome,
@@ -74,7 +74,10 @@ struct StoredPreview {
     discovery_id: u64,
     /// `(candidate ID, plan)` in execution order.
     items: Vec<(String, PlannedItem)>,
+    /// Both clocks: `Instant` ignores wall-clock changes, `SystemTime`
+    /// keeps running while the Mac sleeps, which `Instant` does not.
     expires_at: Instant,
+    expires_at_wall: SystemTime,
     /// Kept after use so a replay reports "consumed", not "unknown".
     consumed: bool,
 }
@@ -146,6 +149,7 @@ impl TinySession {
             discovery_id,
             items: kept,
             expires_at: Instant::now() + ttl,
+            expires_at_wall: SystemTime::now() + ttl,
             consumed: false,
         });
         Ok(preview)
@@ -287,7 +291,7 @@ impl TinySession {
         if preview.consumed {
             return Err(invalid("preview already used"));
         }
-        if Instant::now() >= preview.expires_at {
+        if Instant::now() >= preview.expires_at || SystemTime::now() >= preview.expires_at_wall {
             return Err(invalid("preview expired"));
         }
         let discovery = discovery
