@@ -24,6 +24,10 @@ interview.
 - **Stack and location:** Next.js in `site/` of this repository, with GSAP and
   Lenis for restrained motion. three.js is added only if a reviewed focal needs
   it.
+- **Calls to action:** primary "Get early access" (email waitlist) while the
+  app is unreleased; secondary "View source on GitHub". The user delegated this
+  choice on 2026-10-08; the page sells the app, so the engine/CLI link stays
+  secondary.
 - **Copy:** English.
 - **Review surfaces:** three throwaway static HTML hero specimens for the
   direction choice, then a demo route inside `site/` (excluded from production)
@@ -122,7 +126,6 @@ on an existing step.
 
 ## Open decisions
 
-- Primary call to action while the app is unreleased (waitlist, GitHub, or
-  CLI install); decided in Phase 0.
+- Waitlist backend (the demo form sends nothing).
 - Pro feature list, Free tier limits and prices.
 - Satellite references beside the Apple macOS anchor; picked in Phase 0.
