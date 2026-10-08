@@ -12,7 +12,7 @@ use super::finder_trash::{Trash, TrashError};
 use super::fs_safe::PathFingerprint;
 use super::process::AppProbe;
 use super::providers::{desktop_report_only, CleanProvider};
-use super::trash_plan::PlannedItem;
+use super::trash_plan::{protected_reason, PlannedItem};
 use super::types::CleanItem;
 
 /// Why a path was not moved even though it was planned.
@@ -29,6 +29,9 @@ pub enum SkipReason {
     Changed,
     /// Not inside a discovery root, or a symlink appeared on the way to it.
     OutsideRoots,
+    /// The file-system root, the home folder or one of its ancestors, or a
+    /// tool-reported path outside the home folder.
+    ProtectedPath(String),
     /// The provider's own guard refused the path.
     ProviderGuard(String),
     AppRunning(String),
@@ -99,6 +102,8 @@ impl CheckedExecReport {
 /// Everything execution needs besides the plan.
 pub struct ExecContext<'a> {
     pub providers: &'a [Box<dyn CleanProvider>],
+    /// The home folder (`trash_plan::home_dir()` in the app).
+    pub home: Option<&'a Path>,
     pub probe: &'a dyn AppProbe,
     pub trash: &'a dyn Trash,
     pub cancel: Option<&'a AtomicBool>,
@@ -194,6 +199,10 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
     {
         return Err(SkipReason::OutsideRoots);
     }
+    let tool_printed = gated.iter().any(|(p, _)| p.roots_from_tool_output());
+    if let Some(reason) = protected_reason(&item.path, ctx.home, tool_printed) {
+        return Err(SkipReason::ProtectedPath(reason));
+    }
     for (provider, path) in &gated {
         provider
             .check_item(path)
@@ -273,6 +282,7 @@ mod tests {
         risk: RiskLevel,
         app: Option<&'static str>,
         guard: Option<&'static str>,
+        tool: bool,
     }
 
     fn fixture(id: &'static str) -> Fixture {
@@ -282,6 +292,7 @@ mod tests {
             risk: RiskLevel::Safe,
             app: None,
             guard: None,
+            tool: false,
         }
     }
 
@@ -309,6 +320,9 @@ mod tests {
         }
         fn desktop_trash_paths(&self) -> bool {
             self.desktop
+        }
+        fn roots_from_tool_output(&self) -> bool {
+            self.tool
         }
         fn check_item(&self, path: &Path) -> std::result::Result<(), String> {
             match self.guard {
@@ -376,8 +390,10 @@ mod tests {
         trash: &dyn Trash,
         cancel: Option<&AtomicBool>,
     ) -> CheckedExecReport {
+        let home = std::env::temp_dir();
         let ctx = ExecContext {
             providers: &providers,
+            home: Some(&home),
             probe,
             trash,
             cancel,
@@ -558,6 +574,44 @@ mod tests {
             ItemOutcome::Skipped(SkipReason::SafetyCheckFailed(detail)) if detail.contains("Xcode")
         ));
         let _ = remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn home_its_ancestors_and_tool_paths_outside_home_are_refused() {
+        let home = fixture_root("home", &[]);
+        let outside = fixture_root("outside", &["cache"]);
+        let mut at_home = plan("logs", &home, "");
+        at_home.item.path = home.clone();
+        at_home.fingerprint = fingerprint(&home).unwrap();
+        let tool_outside = plan("npm", &outside, "cache");
+        let plain_outside = plan("logs", &outside, "cache");
+        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(fixture("logs")), {
+            let mut npm = fixture("npm");
+            npm.tool = true;
+            Box::new(npm)
+        }];
+        let trash = FakeTrash::default();
+        let ctx = ExecContext {
+            providers: &providers,
+            home: Some(&home),
+            probe: &MockChecker::none(),
+            trash: &trash,
+            cancel: None,
+            progress: None,
+        };
+        let report = execute_checked(&[at_home, tool_outside, plain_outside], &ctx);
+        assert_eq!(
+            outcomes(&report),
+            vec![
+                ItemOutcome::Skipped(SkipReason::ProtectedPath("the home folder".into())),
+                ItemOutcome::Skipped(SkipReason::ProtectedPath(
+                    "a tool reported a path outside the home folder".into()
+                )),
+                ItemOutcome::MovedToTrash,
+            ]
+        );
+        let _ = remove_recursive_safe(&home);
+        let _ = remove_recursive_safe(&outside);
     }
 
     #[test]

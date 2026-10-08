@@ -323,6 +323,27 @@ fn report_only_categories_cannot_be_previewed() {
 }
 
 #[test]
+fn a_category_root_at_home_is_refused_at_discovery() {
+    let home = fixture_dir("home", &["a"], 1);
+    let mut tool_like = Fixture::new("npm", &home.join("none"));
+    tool_like.extra = vec![home.clone()];
+    let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(tool_like)];
+    let session = TinySession::new();
+    session.clean_state().home = Some(Some(home.clone()));
+    let discovery = discover(&session, &providers).unwrap();
+    let category = &discovery.categories[0];
+    assert!(category.candidates.is_empty());
+    assert_eq!(
+        category.refused,
+        vec![FfiRefusedPath {
+            path: home.to_string_lossy().into_owned(),
+            reason: "the home folder".into()
+        }]
+    );
+    remove(&home);
+}
+
+#[test]
 fn cancelled_discovery_stores_nothing() {
     let dir = fixture_dir("cancel", &["a"], 1);
     let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(Fixture::new("logs", &dir))];

@@ -127,6 +127,12 @@ pub trait CleanProvider {
         false
     }
 
+    /// True when item paths come from a tool's output; such items must lie
+    /// inside the home folder (see `trash_plan::protected_reason`).
+    fn roots_from_tool_output(&self) -> bool {
+        false
+    }
+
     /// Why a provider without `desktop_trash_paths` is report-only.
     fn desktop_report_only_reason(&self) -> ReportOnly {
         ReportOnly::NotPerPathTrash

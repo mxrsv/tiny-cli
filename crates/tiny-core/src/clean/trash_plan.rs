@@ -21,6 +21,36 @@ pub struct PlannedItem {
     pub covers: Vec<CleanItem>,
 }
 
+/// Why `path` must never be cleaned, or `None`. The file-system root, the
+/// home folder and its ancestors are always refused. A path that came from
+/// a tool's output (`npm config get cache`, `go env GOCACHE`, ...) must
+/// also lie strictly inside the home folder, so a misconfigured tool
+/// cannot point cleanup at arbitrary data.
+pub fn protected_reason(path: &Path, home: Option<&Path>, tool_printed: bool) -> Option<String> {
+    if path.parent().is_none() {
+        return Some("the file-system root".into());
+    }
+    let Some(home) = home else {
+        return tool_printed.then(|| "the home folder is unknown".into());
+    };
+    if path == home {
+        Some("the home folder".into())
+    } else if home.starts_with(path) {
+        Some("an ancestor of the home folder".into())
+    } else if tool_printed && !path.starts_with(home) {
+        Some("a tool reported a path outside the home folder".into())
+    } else {
+        None
+    }
+}
+
+/// The home folder from `HOME`, if set.
+pub fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Why a selected path is left out of the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overlap {
@@ -97,6 +127,22 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn root_home_and_its_ancestors_are_always_protected() {
+        let home = Path::new("/Users/me");
+        let check = |p: &str, tool| protected_reason(Path::new(p), Some(home), tool);
+        assert!(check("/", false).is_some());
+        assert!(check("/Users/me", false).is_some());
+        assert!(check("/Users", false).is_some());
+        assert!(check("/Users/me/.npm", false).is_none());
+        assert!(check("/Library/Logs/DiagnosticReports", false).is_none());
+        assert!(check("/Library/Logs/DiagnosticReports", true).is_some());
+        assert!(check("/Users/me/.npm", true).is_none());
+        assert!(check("/Users/meow/.npm", true).is_some(), "name prefix");
+        assert!(protected_reason(Path::new("/x/y"), None, true).is_some());
+        assert!(protected_reason(Path::new("/x/y"), None, false).is_none());
     }
 
     #[test]

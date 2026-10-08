@@ -25,7 +25,7 @@ use tiny_core::clean::providers::{
     ReportOnly,
 };
 use tiny_core::clean::scan_context::{ScanContext, Unreadable};
-use tiny_core::clean::trash_plan::{partition_overlaps, Overlap, PlannedItem};
+use tiny_core::clean::trash_plan::{home_dir, partition_overlaps, Overlap, PlannedItem};
 use tiny_core::clean::types::CleanItem;
 use tiny_core::options::CleanOptions;
 use tiny_core::runner::{CommandRunner, ToolLookup, ToolRunner};
@@ -51,6 +51,8 @@ pub(crate) struct CleanState {
     preview: Option<StoredPreview>,
     /// Test override for `PREVIEW_TTL`.
     ttl: Option<Duration>,
+    /// Test override for the home folder read from `HOME`.
+    home: Option<Option<PathBuf>>,
 }
 
 struct StoredDiscovery {
@@ -204,7 +206,8 @@ impl TinySession {
             state.preview = None;
         }
         let report = |p: tiny_core::progress::Progress| progress.on_progress(p.into());
-        let ctx = ScanContext::new(Some(token.flag()), probe);
+        let home = self.clean_home();
+        let ctx = ScanContext::new(Some(token.flag()), probe).with_home(home);
         let checked = discover_checked(providers, &ctx, Some(&report));
         if checked.cancelled {
             return Err(FfiError::Cancelled);
@@ -247,8 +250,10 @@ impl TinySession {
         let providers = providers(&options);
         let plan: Vec<PlannedItem> = items.iter().map(|(_, plan)| plan.clone()).collect();
         let report = |p: tiny_core::progress::Progress| progress.on_progress(p.into());
+        let home = self.clean_home();
         let ctx = ExecContext {
             providers: &providers,
+            home: home.as_deref(),
             probe,
             trash,
             cancel: Some(token.flag()),
@@ -261,6 +266,10 @@ impl TinySession {
             });
         }
         Ok(exec_report(&items, executed))
+    }
+
+    fn clean_home(&self) -> Option<PathBuf> {
+        self.clean_state().home.clone().unwrap_or_else(home_dir)
     }
 
     /// Marks the preview consumed, under the lock, before any mutation.
@@ -326,13 +335,22 @@ fn store_category(
         candidates: Vec::new(),
         total_bytes: 0,
         unreadable: Vec::new(),
+        refused: Vec::new(),
     };
     match category.outcome {
         CategoryOutcome::Found {
             items,
             unreadable,
             roots,
+            refused,
         } => {
+            ffi.refused = refused
+                .into_iter()
+                .map(|(path, reason)| FfiRefusedPath {
+                    path: path.to_string_lossy().into_owned(),
+                    reason,
+                })
+                .collect();
             let roots = Arc::new(roots);
             for checked in items {
                 let id = format!("d{discovery_id}-{}", candidates.len());

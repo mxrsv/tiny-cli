@@ -143,6 +143,9 @@ impl CleanProvider for NpmCache {
     fn required_tool(&self) -> Option<&'static str> {
         Some("npm")
     }
+    fn roots_from_tool_output(&self) -> bool {
+        true
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let path = match tool_path(self.runner.as_ref(), "npm", &["config", "get", "cache"])? {
             Some(p) => p,
@@ -198,6 +201,9 @@ impl CleanProvider for PnpmStore {
     fn required_tool(&self) -> Option<&'static str> {
         Some("pnpm")
     }
+    fn roots_from_tool_output(&self) -> bool {
+        true
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let path = match tool_path(self.runner.as_ref(), "pnpm", &["store", "path"])? {
             Some(p) => p,
@@ -252,6 +258,9 @@ impl CleanProvider for YarnCache {
     }
     fn required_tool(&self) -> Option<&'static str> {
         Some("yarn")
+    }
+    fn roots_from_tool_output(&self) -> bool {
+        true
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let path = match tool_path(self.runner.as_ref(), "yarn", &["cache", "dir"])? {

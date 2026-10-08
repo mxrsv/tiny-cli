@@ -54,6 +54,9 @@ impl CleanProvider for GoCache {
     fn required_tool(&self) -> Option<&'static str> {
         Some("go")
     }
+    fn roots_from_tool_output(&self) -> bool {
+        true
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let mut items = Vec::new();
         for var in ["GOCACHE", "GOMODCACHE"] {

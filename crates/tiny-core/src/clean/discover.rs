@@ -14,6 +14,7 @@ use std::sync::Arc;
 use super::process::{AppProbe, PgrepChecker, ProcessChecker};
 use super::providers::{all_providers, all_providers_with, CleanProvider};
 use super::scan_context::{ScanContext, Unreadable};
+use super::trash_plan::protected_reason;
 use super::types::{CleanItem, RiskLevel};
 use crate::options::CleanOptions as CleanOpts;
 use crate::runner::CommandRunner;
@@ -51,6 +52,9 @@ pub enum CategoryOutcome {
         unreadable: Vec<(PathBuf, Unreadable)>,
         /// Directories discovery listed or walked for this category.
         roots: Vec<PathBuf>,
+        /// Paths the provider found that must never be cleaned, with why
+        /// (`trash_plan::protected_reason`).
+        refused: Vec<(PathBuf, String)>,
     },
     /// The owning app is running, so the category was not scanned.
     AppRunning { app: String },
@@ -225,11 +229,13 @@ pub fn discover_checked(
             };
         }
         let outcome = match outcome {
-            Some(Ok(items)) => found(items, findings),
+            Some(Ok(items)) => found(items, findings, |path| {
+                protected_reason(path, ctx.home(), provider.roots_from_tool_output())
+            }),
             Some(Err(outcome)) => outcome,
             None => continue,
         };
-        if matches!(&outcome, CategoryOutcome::Found { items, unreadable, .. } if items.is_empty() && unreadable.is_empty())
+        if matches!(&outcome, CategoryOutcome::Found { items, unreadable, refused, .. } if items.is_empty() && unreadable.is_empty() && refused.is_empty())
         {
             continue;
         }
@@ -279,19 +285,28 @@ fn discover_one(
     }))
 }
 
-fn found(items: Vec<CleanItem>, findings: super::scan_context::ScanFindings) -> CategoryOutcome {
+fn found(
+    items: Vec<CleanItem>,
+    findings: super::scan_context::ScanFindings,
+    protected: impl Fn(&std::path::Path) -> Option<String>,
+) -> CategoryOutcome {
     let mut unreadable = findings.unreadable;
-    let items = items
-        .into_iter()
-        .map(|item| CheckedItem {
-            unreadable: unreadable.remove(&item.path),
-            item,
-        })
-        .collect();
+    let mut refused = Vec::new();
+    let mut kept = Vec::new();
+    for item in items {
+        match protected(&item.path) {
+            Some(reason) => refused.push((item.path, reason)),
+            None => kept.push(CheckedItem {
+                unreadable: unreadable.remove(&item.path),
+                item,
+            }),
+        }
+    }
     CategoryOutcome::Found {
-        items,
+        items: kept,
         unreadable: unreadable.into_iter().collect(),
         roots: findings.roots.into_iter().collect(),
+        refused,
     }
 }
 
@@ -479,6 +494,9 @@ mod tests {
             fn required_tool(&self) -> Option<&'static str> {
                 Some("fake-tool")
             }
+            fn roots_from_tool_output(&self) -> bool {
+                true
+            }
             fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
                 let out = run_tool(&self.0, "fake-tool", &["path"])?;
                 Ok(root_as_item(
@@ -548,6 +566,7 @@ mod tests {
                             items: vec![item(3), item(4)],
                             unreadable: Vec::new(),
                             roots: Vec::new(),
+                            refused: Vec::new(),
                         },
                     ),
                     category(
@@ -556,6 +575,7 @@ mod tests {
                             items: Vec::new(),
                             unreadable: vec![(PathBuf::from("/m"), note)],
                             roots: Vec::new(),
+                            refused: Vec::new(),
                         },
                     ),
                     category(
@@ -622,6 +642,34 @@ mod tests {
             assert!(
                 matches!(outcome(&report, "tool"), CategoryOutcome::Unavailable { reason } if reason.contains("fake-tool"))
             );
+        }
+
+        #[test]
+        fn a_tool_printing_home_or_a_path_outside_it_is_refused() {
+            let home = fixture_root("tool-home");
+            let printed = |path: &Path| {
+                let runner = MockRunner::new().with_which("fake-tool").with_exit(
+                    "fake-tool",
+                    &["path"],
+                    0,
+                    &format!("{}\n", path.display()),
+                );
+                let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(ToolFixture(runner))];
+                let ctx = ScanContext::unchecked().with_home(Some(home.clone()));
+                let report = discover_checked(&providers, &ctx, None);
+                match outcome(&report, "tool").clone() {
+                    CategoryOutcome::Found { items, refused, .. } => (items.len(), refused),
+                    other => panic!("unexpected {other:?}"),
+                }
+            };
+            let (found, refused) = printed(&home);
+            assert_eq!((found, refused[0].1.as_str()), (0, "the home folder"));
+            let (found, refused) = printed(&std::env::temp_dir());
+            assert_eq!(found, 0);
+            assert_eq!(refused.len(), 1, "an ancestor or outside path");
+            let (found, refused) = printed(&home.join("child"));
+            assert_eq!((found, refused.len()), (1, 0));
+            let _ = crate::clean::fs_safe::remove_recursive_safe(&home);
         }
 
         #[test]

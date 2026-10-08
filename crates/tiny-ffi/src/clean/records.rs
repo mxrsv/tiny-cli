@@ -94,6 +94,16 @@ pub struct FfiCleanCategory {
     pub total_bytes: u64,
     /// Listing or search paths with unreadable entries.
     pub unreadable: Vec<FfiUnreadablePath>,
+    /// Paths the provider found but that are never offered: the root, the
+    /// home folder or its ancestors, or tool output outside the home folder.
+    pub refused: Vec<FfiRefusedPath>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiRefusedPath {
+    pub path: String,
+    /// English diagnostic text.
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -151,6 +161,9 @@ pub enum FfiSkipReason {
     /// Replaced or edited since discovery.
     Changed,
     OutsideScanRoots,
+    /// The root, the home folder or an ancestor, or a tool-reported path
+    /// outside the home folder.
+    ProtectedPath,
     ProviderGuard,
     AppRunning,
     /// A required safety check could not run.
@@ -280,6 +293,7 @@ fn skip_reason(reason: SkipReason) -> (FfiSkipReason, Option<String>) {
         SkipReason::Symlink => (FfiSkipReason::Symlink, None),
         SkipReason::Changed => (FfiSkipReason::Changed, None),
         SkipReason::OutsideRoots => (FfiSkipReason::OutsideScanRoots, None),
+        SkipReason::ProtectedPath(d) => (FfiSkipReason::ProtectedPath, Some(d)),
         SkipReason::ProviderGuard(d) => (FfiSkipReason::ProviderGuard, Some(d)),
         SkipReason::AppRunning(app) => (FfiSkipReason::AppRunning, Some(app)),
         SkipReason::SafetyCheckFailed(d) => (FfiSkipReason::SafetyCheckUnavailable, Some(d)),
