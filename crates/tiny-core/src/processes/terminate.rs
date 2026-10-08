@@ -253,15 +253,14 @@ mod tests {
     }
 
     #[test]
-    fn unsignalable_pids_never_reach_kill() {
+    /// Pure checks only: `send_signal` is never called with these PIDs.
+    fn unsignalable_pids_are_rejected_by_the_guard() {
         for pid in [0, 1, u32::MAX, i32::MAX as u32 + 1] {
             assert_eq!(signalable_pid(pid), None, "pid {pid}");
-            assert_eq!(
-                send_signal(pid, TerminateKind::Force).unwrap(),
-                Some(TerminateOutcome::Refused(Refusal::SystemProcess))
-            );
+            assert_eq!(pid_refusal(pid), Some(Refusal::SystemProcess), "pid {pid}");
         }
         assert_eq!(signalable_pid(2), Some(2));
+        assert_eq!(signalable_pid(i32::MAX as u32), Some(i32::MAX));
     }
 
     #[test]
