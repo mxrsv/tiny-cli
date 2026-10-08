@@ -156,13 +156,19 @@ fn act_on(
     ctx: &ExecContext<'_>,
     stopped: &mut Option<StopReason>,
 ) -> ItemOutcome {
+    let cancelled = |stopped: &mut Option<StopReason>| {
+        *stopped = Some(StopReason::Cancelled);
+        ItemOutcome::NotAttempted
+    };
+    if ctx.is_cancelled() {
+        return cancelled(stopped);
+    }
     if let Err(reason) = validate(planned, ctx) {
         return ItemOutcome::Skipped(reason);
     }
     // Last check before the mutation.
     if ctx.is_cancelled() {
-        *stopped = Some(StopReason::Cancelled);
-        return ItemOutcome::NotAttempted;
+        return cancelled(stopped);
     }
     let path = &planned.item.path;
     match ctx.trash.move_to_trash(path) {
@@ -728,6 +734,27 @@ mod tests {
         );
         assert_eq!(report.bytes_moved_to_trash(), 4);
         assert!(root.join("b").exists() && root.join("c").exists());
+        let _ = remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn cancellation_is_checked_before_validation_too() {
+        let root = fixture_root("cancel-first", &["a", "b"]);
+        let items = [plan("logs", &root, "a"), plan("logs", &root, "b")];
+        let flag = AtomicBool::new(true);
+        let mut gated = fixture("logs");
+        gated.app = Some("Xcode");
+        let trash = FakeTrash::default();
+        // A failing probe would turn a validated item into a skip.
+        let report = run(
+            &items,
+            vec![Box::new(gated)],
+            &FailingProbe,
+            &trash,
+            Some(&flag),
+        );
+        assert_eq!(report.stopped, Some(StopReason::Cancelled));
+        assert_eq!(outcomes(&report), vec![ItemOutcome::NotAttempted; 2]);
         let _ = remove_recursive_safe(&root);
     }
 
