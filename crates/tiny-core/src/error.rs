@@ -8,6 +8,9 @@ pub enum Error {
     Operation(String),
     #[error("{0}")]
     Unsupported(String),
+    /// macOS denied Apple Events (Automation) access, e.g. Finder for Trash.
+    #[error("automation permission denied: {0}")]
+    AutomationDenied(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

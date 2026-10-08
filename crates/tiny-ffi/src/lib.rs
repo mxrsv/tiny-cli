@@ -10,6 +10,7 @@ compile_error!("tiny-ffi must be built with panic = \"unwind\"");
 
 uniffi::setup_scaffolding!();
 
+pub mod clean;
 pub mod processes;
 pub mod session;
 
@@ -31,6 +32,12 @@ pub enum FfiError {
     Busy,
     #[error("operation cancelled")]
     Cancelled,
+    /// macOS denied Automation (Apple Events) access; never falls back to deletion.
+    #[error("automation permission denied: {detail}")]
+    AutomationDenied { detail: String },
+    /// A cleanup preview is unknown, expired, consumed or no longer matches disk.
+    #[error("preview is no longer valid: {detail}")]
+    PreviewInvalid { detail: String },
 }
 
 impl From<tiny_core::error::Error> for FfiError {
@@ -40,6 +47,7 @@ impl From<tiny_core::error::Error> for FfiError {
             Error::InvalidInput(detail) => Self::InvalidInput { detail },
             Error::Operation(detail) => Self::Operation { detail },
             Error::Unsupported(detail) => Self::Unsupported { detail },
+            Error::AutomationDenied(detail) => Self::AutomationDenied { detail },
             Error::Io(error) => Self::Io {
                 detail: error.to_string(),
             },
