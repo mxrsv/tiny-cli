@@ -95,6 +95,11 @@ enum CleanCopy {
         }
     }
 
+    /// A panic or bridge failure during Move to Trash: items may or may not have moved.
+    static func unknownOutcome(_ summary: String) -> ActionNotice {
+        ActionNotice(tone: .unknown, text: "Tiny could not confirm the result of: \(summary). Check the Trash and the paths you reviewed before scanning again; nothing is repeated automatically.")
+    }
+
     static let expired = CleanError(message: "This review expired after 15 minutes. Nothing was moved; scan again.", needsRescan: true)
 
     // MARK: Report

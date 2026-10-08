@@ -232,6 +232,9 @@ import TinyEngine
         guard let second = panicking.preview, panicking.requestMove() != nil else { throw CheckFailure(message: "preview") }
         await panicking.finishConfirmation(true, previewId: second.previewId)?.value
         try check(panicking.error?.needsRescan == true && panicMarker.pending.isEmpty, "non-FfiError is an unknown outcome; marker cleared")
+        let notice = panicking.actions.notice
+        try check(notice?.tone == .unknown && notice?.text.contains("Check the Trash") == true
+                  && notice?.text.contains("still running") == false, "unknown outcome tells the user to check the Trash")
     }
 
     private static func progressOwnership() async throws {

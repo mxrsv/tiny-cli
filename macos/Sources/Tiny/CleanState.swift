@@ -253,7 +253,7 @@ final class CleanState {
                 requireRescan(CleanCopy.error(error, during: .execute))
             } catch {
                 // A Rust panic or bridge failure: items may or may not have moved.
-                actions.post(ActionCopy.unknownOutcome(summary))
+                actions.post(CleanCopy.unknownOutcome(summary))
                 requireRescan(CleanError(message: "Tiny could not confirm what was moved. Check the Trash before scanning again.", needsRescan: true))
             }
         }
