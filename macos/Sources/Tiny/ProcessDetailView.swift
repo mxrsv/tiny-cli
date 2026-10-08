@@ -6,7 +6,7 @@ struct ProcessDetailView: View {
 
     var body: some View {
         Tile {
-            ScrollView {
+            ScrollViewReader { scroller in ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack {
                         Text("INSPECTOR").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
@@ -15,9 +15,11 @@ struct ProcessDetailView: View {
                     }
                     if let group = state.selectedGroup {
                         appIdentity(group)
+                        if group.isApplication { AppActionBar(group: group, actions: state.actions) }
                         memberList(group)
                         if let process = state.detail?.process ?? state.selectedProcess {
-                            identity(process)
+                            identity(process).id(Self.processAnchor)
+                            ProcessActionBar(process: process, actions: state.actions)
                             if let error = state.detailError {
                                 Label(state.detail == nil ? "Unavailable" : "Stale detail", systemImage: "exclamationmark.triangle")
                                     .foregroundStyle(.orange)
@@ -37,8 +39,14 @@ struct ProcessDetailView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
+            // A large app pushes the selected process below the fold; bring its actions into view.
+            .task(id: state.selection) {
+                if state.selection != nil { scroller.scrollTo(Self.processAnchor, anchor: .top) }
+            } }
         }
     }
+
+    private static let processAnchor = "selected-process"
 
     private func appIdentity(_ group: AppGroup) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -71,6 +79,7 @@ struct ProcessDetailView: View {
                                 .background(state.selection == member.identity ? Theme.accent.opacity(0.10) : .white.opacity(0.03),
                                             in: RoundedRectangle(cornerRadius: 8))
                         }.buttonStyle(.plain).help("Inspect \(member.name), PID \(member.pid)")
+                            .contextMenu { ActionItems.process(member, actions: state.actions) }
                     }
                 }
             }.frame(height: min(CGFloat(group.members.count) * 48, 172))
@@ -122,7 +131,7 @@ struct ProcessDetailView: View {
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
             Text(state.detailError ?? "Select an app to see its member processes, then inspect a process for parent, children and listening ports.")
                 .foregroundStyle(.secondary).font(.callout)
-            Text("Read only. Nothing will be stopped or cleaned.")
+            Text("Quit and Force Quit always ask first. Nothing is stopped automatically.")
                 .foregroundStyle(Theme.accent).font(.caption).padding(.top, 6)
         }
     }

@@ -8,14 +8,18 @@ struct ProcessesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
+            if let notice = state.actions.notice {
+                NoticeBanner(notice: notice) { state.actions.dismissNotice() }
+            }
             HStack(spacing: Theme.gap) {
                 UsageWidget(title: "CPU · WHOLE MACHINE", value: systemCPUText,
                     subtitle: "All cores · 0–100%", fraction: state.systemUsage?.cpuPercent.map { Double($0) / 100 },
-                    icon: "cpu", tint: Theme.accent, state: state.status)
+                    icon: "cpu", tint: Theme.accent, state: state.status).frame(width: Self.widgetWidth)
                 UsageWidget(title: "RAM · WHOLE MACHINE", value: systemRAMText,
                     subtitle: systemRAMSubtitle, fraction: systemRAMFraction,
-                    icon: "memorychip", tint: .cyan, state: state.status)
-            }.frame(height: 152)
+                    icon: "memorychip", tint: .cyan, state: state.status).frame(width: Self.widgetWidth)
+                PortsTile(state: state)
+            }.frame(height: 176)
             HStack(alignment: .top, spacing: Theme.gap) {
                 processList.frame(maxWidth: .infinity, maxHeight: .infinity)
                 ProcessDetailView(state: state).frame(width: 306)
@@ -27,8 +31,11 @@ struct ProcessesView: View {
         .background(Backdrop())
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
+        .modifier(ActionConfirmation(actions: state.actions))
         .task { if startsPolling { await state.run() } }
     }
+
+    private static let widgetWidth: CGFloat = 300
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -42,7 +49,7 @@ struct ProcessesView: View {
             }
             Spacer()
             Text("tiny").font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(.secondary)
-            Pill(text: "READ ONLY")
+            Pill(text: "ASKS BEFORE QUITTING")
         }
     }
 
@@ -132,6 +139,11 @@ struct ProcessesView: View {
                     .help("Resident memory · \(group.measuredMemory.count) of \(group.members.count) processes measured")
             }.width(152)
         }
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let id = ids.first, let group = state.groups.first(where: { $0.id == id }) {
+                ActionItems.group(group, actions: state.actions)
+            }
+        }
         .tableStyle(.inset(alternatesRowBackgrounds: true))
         .scrollContentBackground(.hidden)
         .overlay {
@@ -152,7 +164,12 @@ struct ProcessesView: View {
             }
             if state.refreshing { ProgressView().controlSize(.small).accessibilityLabel("Refreshing processes") }
             Spacer()
-            Text("No process or cleanup actions").foregroundStyle(.secondary)
+            if let running = state.actions.running {
+                ProgressView().controlSize(.small).accessibilityHidden(true)
+                Text("\(running.summary)…").lineLimit(1).foregroundStyle(.secondary)
+            } else {
+                Text("Quit and Force Quit always ask first").foregroundStyle(.secondary)
+            }
             Button {
                 state.paused.toggle()
                 if !state.paused { state.requestRefresh() }
