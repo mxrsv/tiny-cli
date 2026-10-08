@@ -28,10 +28,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSAppleEventsUsageDescription</key><string>Tiny asks Finder to move the items you confirm to the Trash, so you can put them back.</string>
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
+# Ad-hoc signing without hardened runtime needs no apple-events entitlement.
+/usr/libexec/PlistBuddy -c 'Print :NSAppleEventsUsageDescription' "$APP/Contents/Info.plist" >/dev/null
 # The flag name is a short inline Swift string, so check a long hook-only message instead.
 if [ ${#SMOKE_FLAGS[@]} -eq 0 ] && LC_ALL=C grep -aq 'only an instance launched here may be quit' "$APP/Contents/MacOS/Tiny"; then
   printf 'Default build must not contain smoke hooks: %s\n' "$APP" >&2
