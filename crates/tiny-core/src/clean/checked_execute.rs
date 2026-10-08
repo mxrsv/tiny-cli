@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -32,6 +33,9 @@ pub enum SkipReason {
     /// The file-system root, the home folder or one of its ancestors, or a
     /// tool-reported path outside the home folder.
     ProtectedPath(String),
+    /// On another volume than the home folder. Finder may delete such a
+    /// path permanently when that volume has no Trash.
+    NotOnHomeVolume,
     /// The provider's own guard refused the path.
     ProviderGuard(String),
     AppRunning(String),
@@ -192,6 +196,9 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
     if PathFingerprint::of(&meta) != planned.fingerprint {
         return Err(SkipReason::Changed);
     }
+    if meta.dev() != home_device(ctx.home)? {
+        return Err(SkipReason::NotOnHomeVolume);
+    }
     if !planned
         .roots
         .iter()
@@ -224,6 +231,14 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
         }
     }
     Ok(())
+}
+
+/// Device of the home folder, whose volume is known to have a Trash.
+fn home_device(home: Option<&Path>) -> Result<u64, SkipReason> {
+    let home = home.ok_or_else(|| SkipReason::SafetyCheckFailed("home folder unknown".into()))?;
+    fs::metadata(home)
+        .map(|m| m.dev())
+        .map_err(|e| SkipReason::SafetyCheckFailed(format!("cannot stat home folder: {e}")))
 }
 
 /// The item and every item merged into it, each with its provider. Any
@@ -612,6 +627,35 @@ mod tests {
         );
         let _ = remove_recursive_safe(&home);
         let _ = remove_recursive_safe(&outside);
+    }
+
+    #[test]
+    fn items_on_another_volume_than_home_are_refused() {
+        let root = fixture_root("volume", &["a"]);
+        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(fixture("logs"))];
+        let trash = FakeTrash::default();
+        // devfs is a different device than the temp dir's volume.
+        let ctx = ExecContext {
+            providers: &providers,
+            home: Some(Path::new("/dev")),
+            probe: &MockChecker::none(),
+            trash: &trash,
+            cancel: None,
+            progress: None,
+        };
+        let report = execute_checked(&[plan("logs", &root, "a")], &ctx);
+        assert_eq!(
+            outcomes(&report),
+            vec![ItemOutcome::Skipped(SkipReason::NotOnHomeVolume)]
+        );
+        let unknown = ExecContext { home: None, ..ctx };
+        let report = execute_checked(&[plan("logs", &root, "a")], &unknown);
+        assert!(matches!(
+            &outcomes(&report)[0],
+            ItemOutcome::Skipped(SkipReason::SafetyCheckFailed(_))
+        ));
+        assert!(trash.moved.lock().unwrap().is_empty());
+        let _ = remove_recursive_safe(&root);
     }
 
     #[test]

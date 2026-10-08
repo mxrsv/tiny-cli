@@ -164,6 +164,9 @@ pub enum FfiSkipReason {
     /// The root, the home folder or an ancestor, or a tool-reported path
     /// outside the home folder.
     ProtectedPath,
+    /// On another volume than the home folder, where Finder may delete
+    /// permanently instead of moving to Trash.
+    NotOnHomeVolume,
     ProviderGuard,
     AppRunning,
     /// A required safety check could not run.
@@ -294,6 +297,7 @@ fn skip_reason(reason: SkipReason) -> (FfiSkipReason, Option<String>) {
         SkipReason::Changed => (FfiSkipReason::Changed, None),
         SkipReason::OutsideRoots => (FfiSkipReason::OutsideScanRoots, None),
         SkipReason::ProtectedPath(d) => (FfiSkipReason::ProtectedPath, Some(d)),
+        SkipReason::NotOnHomeVolume => (FfiSkipReason::NotOnHomeVolume, None),
         SkipReason::ProviderGuard(d) => (FfiSkipReason::ProviderGuard, Some(d)),
         SkipReason::AppRunning(app) => (FfiSkipReason::AppRunning, Some(app)),
         SkipReason::SafetyCheckFailed(d) => (FfiSkipReason::SafetyCheckUnavailable, Some(d)),
