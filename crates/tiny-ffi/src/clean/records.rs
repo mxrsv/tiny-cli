@@ -2,6 +2,7 @@
 
 use tiny_core::clean::checked_execute::{ItemOutcome, SkipReason, StopReason};
 use tiny_core::clean::finder_trash::TrashError;
+use tiny_core::clean::providers::ReportOnly;
 use tiny_core::clean::types::RiskLevel;
 use tiny_core::options::CleanOptions;
 
@@ -54,6 +55,8 @@ pub enum FfiReportOnlyReason {
     /// Cleanup is a tool command (e.g. `docker system prune`), not a
     /// per-path move to Trash.
     NotPerPathTrash,
+    /// The selection rule can flag data still in use (app-orphans).
+    UnreliableMatch,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -219,6 +222,16 @@ impl From<RiskLevel> for FfiRisk {
             RiskLevel::Safe => Self::Safe,
             RiskLevel::Review => Self::Review,
             RiskLevel::Destructive => Self::Destructive,
+        }
+    }
+}
+
+impl From<ReportOnly> for FfiReportOnlyReason {
+    fn from(reason: ReportOnly) -> Self {
+        match reason {
+            ReportOnly::Destructive => Self::Destructive,
+            ReportOnly::NotPerPathTrash => Self::NotPerPathTrash,
+            ReportOnly::UnreliableMatch => Self::UnreliableMatch,
         }
     }
 }

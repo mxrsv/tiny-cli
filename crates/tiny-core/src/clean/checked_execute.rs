@@ -10,9 +10,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use super::finder_trash::{Trash, TrashError};
 use super::fs_safe::PathFingerprint;
 use super::process::AppProbe;
-use super::providers::CleanProvider;
+use super::providers::{desktop_report_only, CleanProvider};
 use super::trash_plan::PlannedItem;
-use super::types::{CleanItem, RiskLevel};
+use super::types::CleanItem;
 
 /// Why a path was not moved even though it was planned.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,7 +179,7 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
         .iter()
         .find(|p| p.id() == item.category_id)
         .ok_or(SkipReason::UnknownCategory)?;
-    if !provider.desktop_trash_paths() || provider.risk() == RiskLevel::Destructive {
+    if desktop_report_only(provider.as_ref()).is_some() {
         return Err(SkipReason::ReportOnly);
     }
     let meta = fs::symlink_metadata(&item.path).map_err(|e| match e.kind() {
@@ -239,7 +239,7 @@ mod tests {
     use crate::clean::fs_safe::{fingerprint, remove_recursive_safe};
     use crate::clean::process::test_support::{FailingProbe, MockChecker};
     use crate::clean::scan_context::ScanContext;
-    use crate::clean::types::{ExecAction, ExecReport};
+    use crate::clean::types::{ExecAction, ExecReport, RiskLevel};
     use crate::error::Result;
     use std::path::PathBuf;
     use std::sync::Mutex;

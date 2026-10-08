@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use crate::error::Result;
 
-use super::{execute_per_item, run_tool, top_level_entries, CleanProvider};
+use super::{execute_per_item, run_tool, top_level_entries, CleanProvider, ReportOnly};
 use crate::clean::runner::{CommandRunner, RealRunner};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
@@ -102,8 +102,8 @@ impl CleanProvider for AppOrphans {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
-    fn desktop_trash_paths(&self) -> bool {
-        true
+    fn desktop_report_only_reason(&self) -> ReportOnly {
+        ReportOnly::UnreliableMatch
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {

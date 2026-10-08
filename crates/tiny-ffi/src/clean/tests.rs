@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tiny_core::clean::fs_safe::{dir_size_checked, list_children};
-use tiny_core::clean::types::{ExecAction, ExecReport};
+use tiny_core::clean::types::{ExecAction, ExecReport, RiskLevel};
 use tiny_core::error::Result as CoreResult;
 
 use super::*;

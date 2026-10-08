@@ -127,6 +127,11 @@ pub trait CleanProvider {
         false
     }
 
+    /// Why a provider without `desktop_trash_paths` is report-only.
+    fn desktop_report_only_reason(&self) -> ReportOnly {
+        ReportOnly::NotPerPathTrash
+    }
+
     /// Apps that must not be running when `path` is acted on.
     fn item_apps(&self, _path: &Path) -> Vec<String> {
         self.requires_app_quit()
@@ -139,6 +144,28 @@ pub trait CleanProvider {
     /// `path`; `Err` carries the reason it is refused.
     fn check_item(&self, _path: &Path) -> std::result::Result<(), String> {
         Ok(())
+    }
+}
+
+/// Why the desktop only reports a category instead of moving its items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportOnly {
+    /// Permanent deletion or Empty Trash.
+    Destructive,
+    /// Cleanup is a tool command, not a per-path move to Trash.
+    NotPerPathTrash,
+    /// The rule that selects items can flag data still in use.
+    UnreliableMatch,
+}
+
+/// `None` when the desktop may move this provider's items to Trash.
+pub fn desktop_report_only(provider: &dyn CleanProvider) -> Option<ReportOnly> {
+    if provider.risk() == RiskLevel::Destructive {
+        Some(ReportOnly::Destructive)
+    } else if provider.desktop_trash_paths() {
+        None
+    } else {
+        Some(provider.desktop_report_only_reason())
     }
 }
 
@@ -407,40 +434,42 @@ mod tests {
 
     /// Deliberate desktop decision for every category. A new provider fails
     /// this test until it is added here, so eligibility is never implicit.
-    const DESKTOP_TRASH: &[(&str, bool)] = &[
-        ("user-logs", true),
-        ("xcode-derived", true),
-        ("user-caches", true),
-        ("xcode-archives", true),
-        ("xcode-devicesupport", true),
-        ("cargo", true),
-        ("npm", true),
-        ("pnpm", true),
-        ("yarn", true),
-        ("node-modules", true),
-        ("python-caches", true),
-        ("rust-targets", true),
-        ("gradle-maven", true),
-        ("jetbrains", true),
-        ("vscode", true),
-        ("ios-simulators", true),
-        ("android-sdk", true),
-        ("go-cache", true),
+    const DESKTOP_TRASH: &[(&str, Option<ReportOnly>)] = &[
+        ("user-logs", None),
+        ("xcode-derived", None),
+        ("user-caches", None),
+        ("xcode-archives", None),
+        ("xcode-devicesupport", None),
+        ("cargo", None),
+        ("npm", None),
+        ("pnpm", None),
+        ("yarn", None),
+        ("node-modules", None),
+        ("python-caches", None),
+        ("rust-targets", None),
+        ("gradle-maven", None),
+        ("jetbrains", None),
+        ("vscode", None),
+        ("ios-simulators", None),
+        ("android-sdk", None),
+        ("go-cache", None),
         // Runs a system-wide `docker system prune`, not a per-path move.
-        ("docker", false),
-        ("downloads-old", true),
-        ("screenshots-old", true),
-        ("mail-attachments", true),
-        ("streaming-caches", true),
-        ("chat-caches", true),
-        ("browser-caches", true),
-        ("quarantine", true),
-        ("crash-reports", true),
-        ("app-orphans", true),
+        ("docker", Some(ReportOnly::NotPerPathTrash)),
+        ("downloads-old", None),
+        ("screenshots-old", None),
+        ("mail-attachments", None),
+        ("streaming-caches", None),
+        ("chat-caches", None),
+        ("browser-caches", None),
+        ("quarantine", None),
+        ("crash-reports", None),
+        // Folder names are matched against bundle IDs, so live data such as
+        // `Code` (VS Code) or `AddressBook` is flagged as orphaned.
+        ("app-orphans", Some(ReportOnly::UnreliableMatch)),
         // Destructive: `tmutil deletelocalsnapshots` and Empty Trash.
-        ("time-machine-local", false),
-        ("font-quicklook-caches", true),
-        ("trash", false),
+        ("time-machine-local", Some(ReportOnly::Destructive)),
+        ("font-quicklook-caches", None),
+        ("trash", Some(ReportOnly::Destructive)),
     ];
 
     #[test]
@@ -457,18 +486,11 @@ mod tests {
                 .find(|(id, _)| *id == provider.id())
                 .map(|(_, value)| *value);
             assert_eq!(
-                Some(provider.desktop_trash_paths()),
+                Some(desktop_report_only(provider.as_ref())),
                 expected,
                 "{}",
                 provider.id()
             );
-            if provider.risk() == RiskLevel::Destructive {
-                assert!(
-                    !provider.desktop_trash_paths(),
-                    "{} is destructive",
-                    provider.id()
-                );
-            }
         }
     }
 

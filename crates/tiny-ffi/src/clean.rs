@@ -21,11 +21,12 @@ use tiny_core::clean::finder_trash::{FinderTrash, Trash, TrashError};
 use tiny_core::clean::fs_safe::{fingerprint, PathFingerprint};
 use tiny_core::clean::process::{AppProbe, RunnerProbe};
 use tiny_core::clean::providers::{
-    all_providers_with, category_family, known_category_ids, CleanProvider,
+    all_providers_with, category_family, desktop_report_only, known_category_ids, CleanProvider,
+    ReportOnly,
 };
 use tiny_core::clean::scan_context::{ScanContext, Unreadable};
 use tiny_core::clean::trash_plan::{partition_overlaps, Overlap, PlannedItem};
-use tiny_core::clean::types::{CleanItem, RiskLevel};
+use tiny_core::clean::types::CleanItem;
 use tiny_core::options::CleanOptions;
 use tiny_core::runner::{CommandRunner, ToolLookup, ToolRunner};
 
@@ -286,13 +287,14 @@ impl TinySession {
 }
 
 fn desktop_action(providers: &[Box<dyn CleanProvider>], id: &str) -> FfiDesktopAction {
-    match providers.iter().find(|p| p.id() == id) {
-        Some(p) if p.risk() == RiskLevel::Destructive => FfiDesktopAction::ReportOnly {
-            reason: FfiReportOnlyReason::Destructive,
-        },
-        Some(p) if p.desktop_trash_paths() => FfiDesktopAction::MoveToTrash,
-        _ => FfiDesktopAction::ReportOnly {
-            reason: FfiReportOnlyReason::NotPerPathTrash,
+    let reason = match providers.iter().find(|p| p.id() == id) {
+        Some(provider) => desktop_report_only(provider.as_ref()),
+        None => Some(ReportOnly::NotPerPathTrash),
+    };
+    match reason {
+        None => FfiDesktopAction::MoveToTrash,
+        Some(reason) => FfiDesktopAction::ReportOnly {
+            reason: reason.into(),
         },
     }
 }
