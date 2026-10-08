@@ -106,7 +106,7 @@ impl CheckedExecReport {
 /// Everything execution needs besides the plan.
 pub struct ExecContext<'a> {
     pub providers: &'a [Box<dyn CleanProvider>],
-    /// The home folder (`trash_plan::home_dir()` in the app).
+    /// The home folder (`trash_plan::trusted_home` in the app).
     pub home: Option<&'a Path>,
     pub probe: &'a dyn AppProbe,
     pub trash: &'a dyn Trash,

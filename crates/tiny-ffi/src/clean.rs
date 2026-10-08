@@ -25,7 +25,9 @@ use tiny_core::clean::providers::{
     ReportOnly,
 };
 use tiny_core::clean::scan_context::{ScanContext, Unreadable};
-use tiny_core::clean::trash_plan::{home_dir, partition_overlaps, Overlap, PlannedItem};
+use tiny_core::clean::trash_plan::{
+    account_home, partition_overlaps, trusted_home, Overlap, PlannedItem,
+};
 use tiny_core::clean::types::CleanItem;
 use tiny_core::options::CleanOptions;
 use tiny_core::runner::{CommandRunner, ToolLookup, ToolRunner};
@@ -51,8 +53,8 @@ pub(crate) struct CleanState {
     preview: Option<StoredPreview>,
     /// Test override for `PREVIEW_TTL`.
     ttl: Option<Duration>,
-    /// Test override for the home folder read from `HOME`.
-    home: Option<Option<PathBuf>>,
+    /// Test override for (`HOME`, the account home) fed to `trusted_home`.
+    home_inputs: Option<(Option<PathBuf>, Option<PathBuf>)>,
 }
 
 struct StoredDiscovery {
@@ -204,6 +206,7 @@ impl TinySession {
         progress: &dyn ProgressListener,
     ) -> Result<FfiDiscovery, FfiError> {
         validate_options(&options)?;
+        let home = self.clean_home()?;
         let _gate = self.begin()?;
         {
             let mut state = self.clean_state();
@@ -211,11 +214,7 @@ impl TinySession {
             state.preview = None;
         }
         let report = |p: tiny_core::progress::Progress| progress.on_progress(p.into());
-        let ctx = ScanContext::new(Some(token.flag()), probe);
-        let ctx = match self.clean_home() {
-            Some(home) => ctx.refusing_protected_paths(home),
-            None => ctx,
-        };
+        let ctx = ScanContext::new(Some(token.flag()), probe).refusing_protected_paths(home);
         let checked = discover_checked(providers, &ctx, Some(&report));
         if checked.cancelled {
             return Err(FfiError::Cancelled);
@@ -253,15 +252,15 @@ impl TinySession {
         token: &CancellationToken,
         progress: &dyn ProgressListener,
     ) -> Result<FfiExecReport, FfiError> {
+        let home = self.clean_home()?;
         let _gate = self.begin()?;
         let (items, options) = self.consume_preview(preview_id)?;
         let providers = providers(&options);
         let plan: Vec<PlannedItem> = items.iter().map(|(_, plan)| plan.clone()).collect();
         let report = |p: tiny_core::progress::Progress| progress.on_progress(p.into());
-        let home = self.clean_home();
         let ctx = ExecContext {
             providers: &providers,
-            home: home.as_deref(),
+            home: Some(&home),
             probe,
             trash,
             cancel: Some(token.flag()),
@@ -271,8 +270,15 @@ impl TinySession {
         Ok(exec_report(&items, executed))
     }
 
-    fn clean_home(&self) -> Option<PathBuf> {
-        self.clean_state().home.clone().unwrap_or_else(home_dir)
+    /// `HOME` checked against the account home before any scan or move.
+    fn clean_home(&self) -> Result<PathBuf, FfiError> {
+        let (env, account) = self
+            .clean_state()
+            .home_inputs
+            .clone()
+            .unwrap_or_else(|| (std::env::var_os("HOME").map(PathBuf::from), account_home()));
+        trusted_home(env.as_deref(), account.as_deref())
+            .map_err(|detail| FfiError::Operation { detail })
     }
 
     /// Marks the preview consumed, under the lock, before any mutation.

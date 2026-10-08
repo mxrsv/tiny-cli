@@ -44,11 +44,61 @@ pub fn protected_reason(path: &Path, home: Option<&Path>, tool_printed: bool) ->
     }
 }
 
-/// The home folder from `HOME`, if set.
-pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
+/// The current account's home folder from the user database
+/// (`getpwuid_r(getuid())`), independent of the `HOME` variable.
+pub fn account_home() -> Option<PathBuf> {
+    use std::ffi::{CStr, OsStr};
+    use std::os::unix::ffi::OsStrExt;
+    let mut len = 4096;
+    while len <= 1 << 20 {
+        let mut buf = vec![0 as libc::c_char; len];
+        // SAFETY: zeroed `passwd` is a valid out-parameter; `buf` outlives
+        // every read of the strings it backs.
+        let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut found: *mut libc::passwd = std::ptr::null_mut();
+        let rc = unsafe {
+            libc::getpwuid_r(libc::getuid(), &mut pwd, buf.as_mut_ptr(), len, &mut found)
+        };
+        if rc == libc::ERANGE {
+            len *= 2;
+            continue;
+        }
+        if rc != 0 || found.is_null() || pwd.pw_dir.is_null() {
+            return None;
+        }
+        let dir = unsafe { CStr::from_ptr(pwd.pw_dir) };
+        return Some(PathBuf::from(OsStr::from_bytes(dir.to_bytes())));
+    }
+    None
+}
+
+/// The home folder the desktop may trust: `HOME` (normalized) when it is
+/// absolute, not `/`, free of `..`, and equal to the account's home.
+pub fn trusted_home(env_home: Option<&Path>, account: Option<&Path>) -> Result<PathBuf, String> {
+    let normalize = |path: &Path, what: &str| -> Result<PathBuf, String> {
+        if !path.is_absolute() {
+            return Err(format!("{what} is not an absolute path"));
+        }
+        if path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(format!("{what} contains '..'"));
+        }
+        Ok(path.components().collect())
+    };
+    let env_home = env_home
+        .filter(|h| !h.as_os_str().is_empty())
+        .ok_or("HOME is not set")?;
+    let home = normalize(env_home, "HOME")?;
+    if home.parent().is_none() {
+        return Err("HOME is /".into());
+    }
+    let account = account.ok_or("the account home could not be read")?;
+    if normalize(account, "the account home")? != home {
+        return Err("HOME does not match the account home".into());
+    }
+    Ok(home)
 }
 
 /// Why a selected path is left out of the plan.
@@ -143,6 +193,27 @@ mod tests {
         assert!(check("/Users/meow/.npm", true).is_some(), "name prefix");
         assert!(protected_reason(Path::new("/x/y"), None, true).is_some());
         assert!(protected_reason(Path::new("/x/y"), None, false).is_none());
+    }
+
+    #[test]
+    fn home_is_trusted_only_when_it_matches_the_account() {
+        let me = Some(Path::new("/Users/me"));
+        let trust = |env: &str| trusted_home(Some(Path::new(env)), me);
+        assert_eq!(trust("/Users/me/"), Ok(PathBuf::from("/Users/me")));
+        assert_eq!(trust("/Users/me/./"), Ok(PathBuf::from("/Users/me")));
+        assert!(trust("/Users/other").is_err());
+        assert!(trust("/").is_err());
+        assert!(trust("Users/me").is_err());
+        assert!(trust("/Users/other/../me").is_err());
+        assert!(trust("").is_err());
+        assert!(trusted_home(None, me).is_err());
+        assert!(trusted_home(Some(Path::new("/Users/me")), None).is_err());
+    }
+
+    #[test]
+    fn the_account_home_is_an_absolute_path() {
+        let home = account_home().expect("the test account has a home");
+        assert!(home.is_absolute());
     }
 
     #[test]

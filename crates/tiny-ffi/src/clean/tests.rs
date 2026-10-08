@@ -330,7 +330,7 @@ fn a_category_root_at_home_is_refused_at_discovery() {
     tool_like.extra = vec![home.clone()];
     let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(tool_like)];
     let session = TinySession::new();
-    session.clean_state().home = Some(Some(home.clone()));
+    session.clean_state().home_inputs = Some((Some(home.clone()), Some(home.clone())));
     let discovery = discover(&session, &providers).unwrap();
     let category = &discovery.categories[0];
     assert!(category.candidates.is_empty());
@@ -342,6 +342,43 @@ fn a_category_root_at_home_is_refused_at_discovery() {
         }]
     );
     remove(&home);
+}
+
+#[test]
+fn an_untrusted_home_fails_before_any_scan_or_move() {
+    let dir = fixture_dir("untrusted-home", &["a"], 1);
+    let session = TinySession::new();
+    let preview = preview_all(&session, &dir);
+    let account = Some(dir.clone());
+    for env in [dir.join("other"), PathBuf::from("/")] {
+        session.clean_state().home_inputs = Some((Some(env.clone()), account.clone()));
+        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(Fixture::new("logs", &dir))];
+        let scan = discover(&session, &providers);
+        assert!(matches!(scan, Err(FfiError::Operation { .. })), "{env:?}");
+        let trash = FakeTrash::default();
+        let run = execute(
+            &session,
+            &preview.preview_id,
+            &dir,
+            &trash,
+            &CancellationToken::default(),
+        );
+        assert!(matches!(run, Err(FfiError::Operation { .. })), "{env:?}");
+        assert!(trash.moved.lock().unwrap().is_empty());
+        assert!(!session.is_busy());
+    }
+    // Nothing was scanned or consumed: the preview still runs once HOME is trusted.
+    session.clean_state().home_inputs = Some((Some(dir.clone()), account));
+    let report = execute(
+        &session,
+        &preview.preview_id,
+        &dir,
+        &FakeTrash::default(),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(report.moved_count, 1);
+    remove(&dir);
 }
 
 #[test]
