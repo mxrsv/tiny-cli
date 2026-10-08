@@ -525,6 +525,56 @@ fn a_duplicate_keeps_the_app_gate_of_either_category_in_any_order() {
 }
 
 #[test]
+fn an_unselected_overlapping_candidate_still_gates_the_move() {
+    let dir = fixture_dir("spotify-unselected", &[], 0);
+    std::fs::create_dir(dir.join("com.spotify.client")).unwrap();
+    let root = dir.clone();
+    let providers = move || -> Vec<Box<dyn CleanProvider>> {
+        let mut streaming = Fixture::new("streaming", &root.join("none"));
+        streaming.app = Some("Spotify");
+        streaming.extra = vec![root.join("com.spotify.client")];
+        vec![Box::new(Fixture::new("caches", &root)), Box::new(streaming)]
+    };
+    struct SpotifyRunning;
+    impl AppProbe for SpotifyRunning {
+        fn probe(&self, name: &str) -> std::result::Result<bool, String> {
+            Ok(name == "Spotify")
+        }
+    }
+    let session = TinySession::new();
+    let discovery = discover(&session, &providers()).unwrap();
+    // Select only the user-caches-like candidate, not the streaming one.
+    let caches = discovery
+        .categories
+        .iter()
+        .find(|c| c.id == "caches")
+        .unwrap();
+    let preview = session
+        .clean_preview(vec![caches.candidates[0].id.clone()])
+        .unwrap();
+    assert!(preview.excluded.is_empty());
+    let factory = |_: &CleanOptions| providers();
+    let report = session
+        .execute_clean(
+            &preview.preview_id,
+            &factory,
+            &SpotifyRunning,
+            &FakeTrash::default(),
+            &CancellationToken::default(),
+            &Progress::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        outcomes(&report),
+        vec![FfiItemOutcome::Skipped {
+            reason: FfiSkipReason::AppRunning,
+            detail: Some("Spotify".into())
+        }]
+    );
+    remove(&dir);
+}
+
+#[test]
 fn an_ancestor_selected_over_a_gated_child_keeps_the_child_gate() {
     let dir = fixture_dir("spotify-child", &[], 0);
     std::fs::create_dir_all(dir.join("Caches/com.spotify.client")).unwrap();

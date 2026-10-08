@@ -7,7 +7,7 @@
 //! calls a provider's own cleanup.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -124,16 +124,12 @@ impl TinySession {
         let discovery_id = discovery.id;
         let planned = plan_selection(discovery, candidate_ids)?;
         let (mut kept, covered) = partition_overlaps(planned, |(_, plan)| plan.item.path.as_path());
+        for (id, plan) in &mut kept {
+            plan.covers = covered_candidates(discovery, id, &plan.item.path);
+        }
         let excluded = covered
             .into_iter()
-            .map(|((id, plan), overlap)| {
-                let excluded = exclusion(&kept, id, &plan, overlap);
-                // The kept path moves this one too, so it inherits its gates.
-                let (Overlap::Duplicate { kept: index } | Overlap::Inside { kept: index }) =
-                    overlap;
-                kept[index].1.covers.push(plan.item);
-                excluded
-            })
+            .map(|((id, plan), overlap)| exclusion(&kept, id, &plan, overlap))
             .collect();
         let preview_id = format!("p{}", state.next_id());
         let preview = FfiPreview {
@@ -393,6 +389,21 @@ fn store_category(
         }
     }
     ffi
+}
+
+/// Every other candidate of the discovery at `path` or inside it, selected
+/// or not. Moving `path` moves them too, so their providers' guards and app
+/// gates must hold (e.g. streaming-caches' Spotify gate on a user-caches
+/// folder). Sorted so the checks run in a stable order.
+fn covered_candidates(discovery: &StoredDiscovery, id: &str, path: &Path) -> Vec<CleanItem> {
+    let mut covered: Vec<CleanItem> = discovery
+        .candidates
+        .iter()
+        .filter(|(other, candidate)| *other != id && candidate.item.path.starts_with(path))
+        .map(|(_, candidate)| candidate.item.clone())
+        .collect();
+    covered.sort_by(|a, b| (&a.path, &a.category_id).cmp(&(&b.path, &b.category_id)));
+    covered
 }
 
 /// Resolves selected IDs against the stored discovery only.
