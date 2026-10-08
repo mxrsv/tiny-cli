@@ -19,6 +19,12 @@ struct ActionRequest: Identifiable, Equatable {
     let summary: String
 }
 
+/// The one tracked mutation running now: a Quit, Force Quit, app Quit or cleanup.
+struct RunningAction: Equatable {
+    let id: UUID
+    let summary: String
+}
+
 struct ActionNotice: Equatable {
     enum Tone { case success, info, warning, failure, unknown }
     let tone: Tone
@@ -146,7 +152,7 @@ final class ActionState {
     typealias QuitApp = @MainActor (AppQuitTarget) async -> AppQuitOutcome
 
     private(set) var pending: ActionRequest?
-    private(set) var running: ActionRequest?
+    private(set) var running: RunningAction?
     private(set) var notice: ActionNotice?
     @ObservationIgnored var onFinish: @MainActor () -> Void = {}
     @ObservationIgnored private let terminate: Terminate
@@ -200,9 +206,30 @@ final class ActionState {
             notice = ActionCopy.markerFailed(request.summary, error)
             return nil
         }
-        running = request
+        running = RunningAction(id: request.id, summary: request.summary)
         return Task { await perform(request) }
     }
+
+    /// Claims the shared guard for a mutation owned elsewhere (cleanup), with the
+    /// same durable marker. Returns false, with a notice, when it must not start.
+    func beginTracked(_ id: UUID, summary: String) -> Bool {
+        guard running == nil else { notice = ActionCopy.busy; return false }
+        do { try marker.begin(id, summary: summary) } catch {
+            notice = ActionCopy.markerFailed(summary, error)
+            return false
+        }
+        running = RunningAction(id: id, summary: summary)
+        return true
+    }
+
+    /// Releases a guard taken by `beginTracked`, on any return.
+    func endTracked(_ id: UUID) {
+        guard running?.id == id else { return }
+        marker.clear(id)
+        running = nil
+    }
+
+    func post(_ notice: ActionNotice) { self.notice = notice }
 
     private func open(_ request: ActionRequest) {
         guard running == nil else { notice = ActionCopy.busy; return }

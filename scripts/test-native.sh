@@ -19,9 +19,12 @@ swiftc -swift-version 6 -parse-as-library \
   "$ROOT/macos/Sources/Tiny/PortsModel.swift" \
   "$ROOT/macos/Sources/Tiny/ConfirmationAlert.swift" \
   "$ROOT/macos/Sources/Tiny/InFlightMarker.swift" \
+  "$ROOT/macos/Sources/Tiny/CleanState.swift" \
+  "$ROOT/macos/Sources/Tiny/CleanCopy.swift" \
   "$ROOT/macos/Tests/TinyEngineTests/EngineTests.swift" \
   "$ROOT/macos/Tests/TinyTests/ProcessStateTests.swift" \
   "$ROOT/macos/Tests/TinyTests/AppGroupTests.swift" \
   "$ROOT/macos/Tests/TinyTests/ActionTests.swift" \
+  "$ROOT/macos/Tests/TinyTests/CleanTests.swift" \
   -o "$BIN/native-checks"
 "$BIN/native-checks"

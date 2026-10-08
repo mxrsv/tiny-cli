@@ -4,6 +4,7 @@ import TinyEngine
 
 @MainActor @Observable
 final class AppState {
+    enum Screen: String, CaseIterable { case activity = "Activity", clean = "Clean" }
     enum Sort: String, CaseIterable {
         case cpu = "CPU", memory = "Memory", name = "Name"
     }
@@ -11,6 +12,7 @@ final class AppState {
     var sort: Sort = .cpu
     var paused = false
     var showBackground = false
+    var screen: Screen = .activity
     private(set) var groups: [AppGroup] = []
     private(set) var groupSelection: String?
     private(set) var systemUsage: FfiSystemUsage?
@@ -26,6 +28,7 @@ final class AppState {
     private(set) var listeners: FfiListeners?
     private(set) var listenersError: String?
     let actions: ActionState
+    let clean: CleanState
     @ObservationIgnored private let catalog = AppCatalog()
     @ObservationIgnored private let engine: Engine
     @ObservationIgnored private var generation = 0
@@ -39,6 +42,7 @@ final class AppState {
         self.engine = engine
         actions = ActionState(terminate: { try await engine.terminate($0, kind: $1) },
                               quitApp: { await AppQuit.quit($0) }, marker: InFlightMarker(directory: markerDirectory))
+        clean = CleanState(engine: engine, actions: actions)
         actions.onFinish = { [weak self] in self?.requestRefresh(includingPorts: true) }
     }
 
