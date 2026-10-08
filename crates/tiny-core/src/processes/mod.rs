@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::runner::CommandRunner;
 
-pub use ports::{port_owners, ListeningPort, PortOwner, PortOwners, PORT_VISIBILITY_CAVEAT};
+pub use ports::{
+    listeners, port_owners, Listener, ListenerList, ListeningPort, PortOwner, PortOwners,
+    LISTENERS_VISIBILITY_CAVEAT, PORT_VISIBILITY_CAVEAT,
+};
 pub use snapshot::{ProcessInfo, ProcessSnapshot, Sampler};
 pub use terminate::{
     refusal, terminate, Refusal, TerminateKind, TerminateOutcome, TerminateTarget,

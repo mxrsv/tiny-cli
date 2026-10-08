@@ -1,5 +1,5 @@
 //! Listening TCP ports via bounded `lsof` probes: the ports of one process,
-//! and the visible owners of one port.
+//! the visible owners of one port, and every visible listener.
 
 use std::time::Duration;
 
@@ -29,7 +29,14 @@ pub fn listening_ports(
 ) -> std::result::Result<Vec<ListeningPort>, String> {
     let pid = pid.to_string();
     let args = ["-nP", "-a", "-p", &pid, "-iTCP", "-sTCP:LISTEN", "-Fn"];
-    Ok(run_lsof(&args, runner)?.map_or_else(Vec::new, |stdout| parse_lsof_names(&stdout)))
+    let stdout = run_lsof(&args, runner)?.unwrap_or_default();
+    let mut ports: Vec<_> = parse_lsof(&stdout)
+        .into_iter()
+        .map(|(_, port)| port)
+        .collect();
+    ports.sort();
+    ports.dedup();
+    Ok(ports)
 }
 
 /// Runs `lsof`; `Ok(None)` when it exits 1 with no output, which means
@@ -102,21 +109,17 @@ pub fn port_owners(
         ));
     }
     let filter = format!("-iTCP:{port}");
-    let stdout = run_lsof(&["-nP", &filter, "-sTCP:LISTEN", "-Fp"], runner)
+    let stdout = run_lsof(&["-nP", &filter, "-sTCP:LISTEN", "-Fpn"], runner)
         .map_err(|detail| Error::Operation(format!("port {port} lookup failed: {detail}")))?;
-    let pids = stdout.as_deref().map_or_else(Vec::new, parse_lsof_pids);
+    let mut pids: Vec<u32> = parse_lsof(&stdout.unwrap_or_default())
+        .into_iter()
+        .map(|(pid, _)| pid)
+        .collect();
+    pids.dedup();
     let snapshot = sample();
     let owners = pids
         .into_iter()
-        .map(|pid| {
-            let process = snapshot.processes.iter().find(|p| p.pid == pid).cloned();
-            let refusal = process.as_ref().and_then(refusal);
-            PortOwner {
-                pid,
-                process,
-                refusal,
-            }
-        })
+        .map(|pid| port_owner(pid, &snapshot))
         .collect();
     Ok(PortOwners {
         port,
@@ -127,34 +130,87 @@ pub fn port_owners(
     })
 }
 
-/// Parses `lsof -Fp` output: `p<pid>` lines, one per process.
-fn parse_lsof_pids(stdout: &str) -> Vec<u32> {
-    let mut pids: Vec<u32> = stdout
-        .lines()
-        .filter_map(|line| line.strip_prefix('p')?.parse().ok())
-        .collect();
-    pids.sort_unstable();
-    pids.dedup();
-    pids
+fn port_owner(pid: u32, snapshot: &ProcessSnapshot) -> PortOwner {
+    let process = snapshot.processes.iter().find(|p| p.pid == pid).cloned();
+    let refusal = process.as_ref().and_then(refusal);
+    PortOwner {
+        pid,
+        process,
+        refusal,
+    }
 }
 
-/// Parses `lsof -Fn` output: only `n` lines carry `address:port`. Splits on
-/// the last `:` so `[::1]:3000` and `*:8080` both parse.
-fn parse_lsof_names(stdout: &str) -> Vec<ListeningPort> {
-    let mut ports: Vec<ListeningPort> = stdout
-        .lines()
-        .filter_map(|line| line.strip_prefix('n'))
-        .filter_map(|name| {
-            let (address, port) = name.rsplit_once(':')?;
-            Some(ListeningPort {
-                address: address.to_string(),
-                port: port.parse().ok()?,
-            })
+/// Always attached to the listener list: it is never complete.
+pub const LISTENERS_VISIBILITY_CAVEAT: &str =
+    "Only listeners visible to the current user are shown. \
+Without root, lsof cannot see other users' sockets, so this list is not complete.";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Listener {
+    pub address: String,
+    pub port: u16,
+    pub owner: PortOwner,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListenerList {
+    /// Sorted by port, then address and PID; one entry per socket address.
+    pub listeners: Vec<Listener>,
+    pub visibility_caveat: String,
+    pub sampled_at: u64,
+}
+
+/// Every visible listening TCP socket. Same rules as `port_owners`: `lsof`
+/// runs before `sample`, and a failed or timed-out probe is an error.
+pub fn listeners(
+    runner: &dyn CommandRunner,
+    sample: impl FnOnce() -> ProcessSnapshot,
+) -> Result<ListenerList> {
+    let stdout = run_lsof(&["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"], runner)
+        .map_err(|detail| Error::Operation(format!("listener lookup failed: {detail}")))?;
+    let mut entries = parse_lsof(&stdout.unwrap_or_default());
+    entries.sort_by(|(a_pid, a), (b_pid, b)| {
+        (a.port, &a.address, a_pid).cmp(&(b.port, &b.address, b_pid))
+    });
+    let snapshot = sample();
+    let listeners = entries
+        .into_iter()
+        .map(|(pid, socket)| Listener {
+            address: socket.address,
+            port: socket.port,
+            owner: port_owner(pid, &snapshot),
         })
         .collect();
-    ports.sort();
-    ports.dedup();
-    ports
+    Ok(ListenerList {
+        listeners,
+        visibility_caveat: LISTENERS_VISIBILITY_CAVEAT.to_string(),
+        sampled_at: snapshot.sampled_at,
+    })
+}
+
+/// Parses `lsof -F` output, where each `n<address:port>` line belongs to the
+/// preceding `p<pid>` line. Splits on the last `:` so `[::1]:3000` and
+/// `*:8080` both parse. Sorted by PID and deduplicated.
+fn parse_lsof(stdout: &str) -> Vec<(u32, ListeningPort)> {
+    let mut pid = None;
+    let mut entries = Vec::new();
+    for line in stdout.lines() {
+        if let Some(value) = line.strip_prefix('p') {
+            pid = value.parse().ok();
+        } else if let (Some(pid), Some(name)) = (pid, line.strip_prefix('n')) {
+            if let Some((address, port)) = name.rsplit_once(':') {
+                if let Ok(port) = port.parse() {
+                    let address = address.to_string();
+                    entries.push((pid, ListeningPort { address, port }));
+                }
+            }
+        }
+    }
+    entries.sort();
+    entries.dedup();
+    entries
 }
 
 #[cfg(test)]
@@ -226,7 +282,8 @@ mod tests {
             .contains("did not finish"));
     }
 
-    const OWNER_ARGS: [&str; 4] = ["-nP", "-iTCP:8080", "-sTCP:LISTEN", "-Fp"];
+    const OWNER_ARGS: [&str; 4] = ["-nP", "-iTCP:8080", "-sTCP:LISTEN", "-Fpn"];
+    const LISTENER_ARGS: [&str; 4] = ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"];
 
     fn sampled(pid: u32, mine: bool) -> ProcessInfo {
         ProcessInfo {
@@ -262,7 +319,8 @@ mod tests {
 
     #[test]
     fn lists_every_owner_including_other_users_and_unsampled() {
-        let stdout = "p4100\nf5\np4200\nf6\np4300\np4100\n";
+        let stdout =
+            "p4100\nf5\nn*:8080\nf6\nn[::1]:8080\np4200\nf6\nn*:8080\np4300\nf3\nn127.0.0.1:8080\n";
         let found = owners_with(Ok(outcome(0, stdout, ""))).unwrap();
         let summary: Vec<_> = found
             .owners
@@ -315,5 +373,64 @@ mod tests {
         let result = port_owners(0, &runner, || panic!("must not sample"));
         assert!(matches!(result, Err(Error::InvalidInput(_))));
         assert!(runner.output_calls.lock().unwrap().is_empty());
+    }
+
+    fn listeners_with(
+        result: std::result::Result<CommandOutcome, CommandError>,
+    ) -> Result<ListenerList> {
+        let runner = MockRunner::new().with_output(LSOF, &LISTENER_ARGS, result);
+        listeners(&runner, sample)
+    }
+
+    #[test]
+    fn listeners_are_sorted_by_port_deduped_and_keep_unsampled_owners() {
+        let stdout = "p4200\nf4\nn*:8080\np4100\nf5\nn127.0.0.1:5173\nf6\nn127.0.0.1:5173\nf7\nn[::1]:3000\np4300\nf3\nn*:3000\n";
+        let found = listeners_with(Ok(outcome(0, stdout, ""))).unwrap();
+        let summary: Vec<_> = found
+            .listeners
+            .iter()
+            .map(|l| {
+                (
+                    l.port,
+                    l.address.as_str(),
+                    l.owner.pid,
+                    l.owner.actionable(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (3000, "*", 4300, false),
+                (3000, "[::1]", 4100, true),
+                (5173, "127.0.0.1", 4100, true),
+                (8080, "*", 4200, false),
+            ]
+        );
+        assert_eq!(found.listeners[3].owner.refusal, Some(Refusal::OtherUser));
+        assert_eq!(found.listeners[0].owner.process, None);
+        assert_eq!(found.sampled_at, 7);
+        assert!(found.visibility_caveat.contains("not complete"));
+    }
+
+    #[test]
+    fn no_visible_listener_still_carries_the_caveat() {
+        let found = listeners_with(Ok(outcome(1, "", ""))).unwrap();
+        assert!(found.listeners.is_empty());
+        assert_eq!(found.visibility_caveat, LISTENERS_VISIBILITY_CAVEAT);
+    }
+
+    #[test]
+    fn failed_or_timed_out_listener_probe_is_an_error() {
+        let failed = listeners_with(Ok(outcome(2, "", "lsof: bad option")));
+        assert!(matches!(failed, Err(Error::Operation(d)) if d.contains("bad option")));
+        let timeout = CommandError::Timeout {
+            bin: LSOF.into(),
+            timeout_ms: 3000,
+        };
+        assert!(matches!(
+            listeners_with(Err(timeout)),
+            Err(Error::Operation(d)) if d.contains("did not finish")
+        ));
     }
 }
