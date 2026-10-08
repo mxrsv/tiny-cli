@@ -169,6 +169,20 @@ mod tests {
     }
 
     #[test]
+    fn runner_probe_works_against_the_real_pgrep() {
+        use crate::runner::RealRunner;
+        // pgrep excludes its own ancestors (so not `launchd`); a child is not one.
+        let mut child = Command::new("/bin/sleep").arg("5").spawn().unwrap();
+        let probe = RunnerProbe(&RealRunner);
+        let running = probe.probe("sleep");
+        let absent = probe.probe("tiny-no-such-process-xyz");
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(running, Ok(true));
+        assert_eq!(absent, Ok(false));
+    }
+
+    #[test]
     fn any_running_combines_names() {
         let m = MockChecker::with_running(["rustc"]);
         assert!(any_running(&m, &["cargo", "rustc"]));

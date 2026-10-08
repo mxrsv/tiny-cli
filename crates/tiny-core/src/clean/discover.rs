@@ -155,7 +155,12 @@ fn discover_inner(
     let providers = select_providers(opts);
     let probe = Lenient(checker);
     let ctx = ScanContext::new(None, &probe);
-    let checked = discover_checked(&providers, &ctx, progress);
+    Ok(legacy_report(discover_checked(&providers, &ctx, progress)))
+}
+
+/// Maps checked discovery to the CLI's report: unavailable, failed and
+/// empty categories are dropped, as the CLI showed nothing for them before.
+fn legacy_report(checked: CheckedDiscovery) -> DiscoveryReport {
     let mut report = DiscoveryReport {
         groups: Vec::new(),
         skipped_running: Vec::new(),
@@ -181,7 +186,7 @@ fn discover_inner(
             _ => {}
         }
     }
-    Ok(report)
+    report
 }
 
 /// Runs every provider, isolating failures: a provider that errors, lacks
@@ -501,6 +506,75 @@ mod tests {
                 .find(|c| c.id == id)
                 .unwrap_or_else(|| panic!("{id} missing"))
                 .outcome
+        }
+
+        #[test]
+        fn cli_report_keeps_its_old_shape() {
+            let item = |size| CheckedItem {
+                item: CleanItem {
+                    category_id: "a".into(),
+                    category_label: "a".into(),
+                    path: PathBuf::from(format!("/x/{size}")),
+                    size,
+                    risk: RiskLevel::Safe,
+                },
+                unreadable: None,
+            };
+            let note = Unreadable {
+                entries: 1,
+                first_error: "denied".into(),
+            };
+            let category = |id: &str, outcome| CheckedCategory {
+                id: id.into(),
+                label: id.into(),
+                risk: RiskLevel::Safe,
+                outcome,
+            };
+            let checked = CheckedDiscovery {
+                categories: vec![
+                    category(
+                        "found",
+                        CategoryOutcome::Found {
+                            items: vec![item(3), item(4)],
+                            unreadable: Vec::new(),
+                            roots: Vec::new(),
+                        },
+                    ),
+                    category(
+                        "denied-only",
+                        CategoryOutcome::Found {
+                            items: Vec::new(),
+                            unreadable: vec![(PathBuf::from("/m"), note)],
+                            roots: Vec::new(),
+                        },
+                    ),
+                    category(
+                        "running",
+                        CategoryOutcome::AppRunning { app: "Mail".into() },
+                    ),
+                    category(
+                        "docker",
+                        CategoryOutcome::Failed {
+                            error: "daemon down".into(),
+                        },
+                    ),
+                    category(
+                        "go",
+                        CategoryOutcome::Unavailable {
+                            reason: "go was not found".into(),
+                        },
+                    ),
+                ],
+                cancelled: false,
+            };
+            let report = legacy_report(checked);
+            assert_eq!(report.groups.len(), 1);
+            assert_eq!(report.groups[0].id, "found");
+            assert_eq!(report.groups[0].total_size, 7);
+            assert_eq!(
+                report.skipped_running,
+                vec![("running".to_string(), "Mail".to_string())]
+            );
         }
 
         #[test]
