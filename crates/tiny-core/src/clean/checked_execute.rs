@@ -185,13 +185,34 @@ fn act_on(
     }
 }
 
-/// The per-item validator, run immediately before each move: provider
-/// eligibility, `symlink_metadata`, fingerprint, root containment, the
-/// providers' guards, then the running-app check. Guards and app gates of
-/// every item merged into this one apply too.
+/// The per-item validator, run immediately before each move. Slow checks
+/// come first so the path checks sit right before the move: provider
+/// eligibility, the running-app probe, the providers' guards, then
+/// `symlink_metadata`, fingerprint, volume, root containment and protected
+/// paths. Guards and app gates of every item merged into this one apply too.
 pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), SkipReason> {
     let item = &planned.item;
     let gated = gated_items(planned, ctx)?;
+    let apps: BTreeSet<String> = gated
+        .iter()
+        .flat_map(|(provider, path)| provider.item_apps(path))
+        .collect();
+    for app in apps {
+        match ctx.probe.probe(&app) {
+            Ok(false) => {}
+            Ok(true) => return Err(SkipReason::AppRunning(app)),
+            Err(e) => {
+                return Err(SkipReason::SafetyCheckFailed(format!(
+                    "running-app check for {app} failed: {e}"
+                )))
+            }
+        }
+    }
+    for (provider, path) in &gated {
+        provider
+            .check_item(path)
+            .map_err(SkipReason::ProviderGuard)?;
+    }
     let meta = fs::symlink_metadata(&item.path).map_err(|e| match e.kind() {
         io::ErrorKind::NotFound => SkipReason::Missing,
         _ => SkipReason::SafetyCheckFailed(e.to_string()),
@@ -215,26 +236,6 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
     let tool_printed = gated.iter().any(|(p, _)| p.roots_from_tool_output());
     if let Some(reason) = protected_reason(&item.path, ctx.home, tool_printed) {
         return Err(SkipReason::ProtectedPath(reason));
-    }
-    for (provider, path) in &gated {
-        provider
-            .check_item(path)
-            .map_err(SkipReason::ProviderGuard)?;
-    }
-    let apps: BTreeSet<String> = gated
-        .iter()
-        .flat_map(|(provider, path)| provider.item_apps(path))
-        .collect();
-    for app in apps {
-        match ctx.probe.probe(&app) {
-            Ok(false) => {}
-            Ok(true) => return Err(SkipReason::AppRunning(app)),
-            Err(e) => {
-                return Err(SkipReason::SafetyCheckFailed(format!(
-                    "running-app check for {app} failed: {e}"
-                )))
-            }
-        }
     }
     Ok(())
 }
@@ -734,6 +735,24 @@ mod tests {
         );
         assert_eq!(report.bytes_moved_to_trash(), 4);
         assert!(root.join("b").exists() && root.join("c").exists());
+        let _ = remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn the_app_probe_runs_before_the_path_checks() {
+        let root = fixture_root("order", &["gone"]);
+        let item = plan("logs", &root, "gone");
+        remove_recursive_safe(&root.join("gone")).unwrap();
+        let mut gated = fixture("logs");
+        gated.app = Some("Xcode");
+        let running = MockChecker::with_running(["Xcode"]);
+        let trash = FakeTrash::default();
+        let report = run(&[item], vec![Box::new(gated)], &running, &trash, None);
+        assert_eq!(
+            outcomes(&report),
+            vec![ItemOutcome::Skipped(SkipReason::AppRunning("Xcode".into()))],
+            "the missing path is checked after the probe"
+        );
         let _ = remove_recursive_safe(&root);
     }
 
