@@ -20,6 +20,9 @@ import TinyEngine
         await clean.scan()?.value
         try check(clean.phase == .ready, "scan ready")
         try check(clean.selection == ["safe-1"], "only safe items of safe Move-to-Trash categories start selected")
+        try check(!clean.selection.contains("safe-parent"), "a safe folder holding review items is not preselected (PC-C3)")
+        try check(!CleanState.contains("/a/b", "/a/bc") && CleanState.contains("/a/b", "/a/b/c") && CleanState.contains("/a/b", "/a/b"),
+                  "ancestor test is per path component")
         clean.toggle(category: "report")
         clean.toggle(candidate: "report-1")
         try check(!clean.selection.contains("report-1"), "report-only cannot be selected")
@@ -154,6 +157,11 @@ import TinyEngine
         let preselected = CleanState.preselected(found)
         let review = Set(found.categories.flatMap(\.candidates).filter { $0.risk != .safe }.map(\.id))
         try check(preselected.isDisjoint(with: review), "no review candidate is preselected in real data")
+        let candidates = found.categories.flatMap(\.candidates)
+        let reviewPaths = candidates.filter { $0.risk != .safe }.map(\.path)
+        try check(candidates.filter { preselected.contains($0.id) }.allSatisfy { item in
+            !reviewPaths.contains { CleanState.contains(item.path, $0) }
+        }, "no preselected item carries a review item in real data")
     }
 
     // MARK: Fixtures
@@ -174,8 +182,9 @@ import TinyEngine
                          unreadable: [], refused: [])
     }
 
-    nonisolated static func candidate(_ id: String, risk: FfiRisk = .safe, size: UInt64 = 100) -> FfiCleanCandidate {
-        FfiCleanCandidate(id: id, path: "/Users/alice/Library/Caches/\(id)", sizeBytes: size, unreadableEntries: 0, risk: risk)
+    nonisolated static func candidate(_ id: String, risk: FfiRisk = .safe, size: UInt64 = 100,
+                                      path: String? = nil) -> FfiCleanCandidate {
+        FfiCleanCandidate(id: id, path: path ?? "/Users/alice/Library/Caches/\(id)", sizeBytes: size, unreadableEntries: 0, risk: risk)
     }
 }
 
@@ -199,7 +208,8 @@ actor FakeCleanEngine: CleanEngine {
         progress.onProgress(progress: FfiProgress(operation: "scan", completed: 1, total: 1, message: "fixture"))
         typealias T = CleanTests
         return FfiDiscovery(discoveryId: "d1", categories: [
-            T.category("safe", candidates: [T.candidate("safe-1"), T.candidate("safe-review", risk: .review)]),
+            T.category("safe", candidates: [T.candidate("safe-1"), T.candidate("safe-review", risk: .review),
+                                            T.candidate("safe-parent", path: "/Users/alice/Library/Caches")]),
             T.category("review", risk: .review, candidates: [T.candidate("review-1", risk: .review), T.candidate("review-2", risk: .review)]),
             T.category("report", desktop: .reportOnly(reason: .notPerPathTrash), candidates: [T.candidate("report-1")]),
             T.category("running", status: .appRunning(app: "Xcode"))])

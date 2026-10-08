@@ -28,7 +28,7 @@ use tiny_core::clean::scan_context::{ScanContext, Unreadable};
 use tiny_core::clean::trash_plan::{
     account_home, partition_overlaps, trusted_home, Overlap, PlannedItem,
 };
-use tiny_core::clean::types::CleanItem;
+use tiny_core::clean::types::{CleanItem, RiskLevel};
 use tiny_core::options::CleanOptions;
 use tiny_core::runner::{CommandRunner, ToolLookup, ToolRunner};
 
@@ -82,6 +82,8 @@ struct StoredPreview {
     expires_at_wall: SystemTime,
     /// Kept after use so a replay reports "consumed", not "unknown".
     consumed: bool,
+    /// Candidate IDs the user selected, for the execute-time PC-C3 check.
+    selected: BTreeSet<String>,
 }
 
 impl CleanState {
@@ -122,15 +124,33 @@ impl TinySession {
                 detail: "no current discovery; scan again".into(),
             })?;
         let discovery_id = discovery.id;
-        let planned = plan_selection(discovery, candidate_ids)?;
+        let selected: BTreeSet<String> = candidate_ids.iter().cloned().collect();
+        let mut excluded = Vec::new();
+        let mut planned = Vec::new();
+        // PC-C3 before overlaps: a blocked ancestor must not hide its selected children.
+        for (id, plan) in plan_selection(discovery, candidate_ids)? {
+            let review = unselected_review(discovery, &id, &plan.item.path, &selected);
+            if review.is_empty() {
+                planned.push((id, plan));
+            } else {
+                excluded.push(FfiPreviewExclusion {
+                    candidate_id: id,
+                    path: plan.item.path.to_string_lossy().into_owned(),
+                    reason: FfiExclusionReason::CoversUnselectedReview {
+                        candidate_ids: review,
+                    },
+                });
+            }
+        }
         let (mut kept, covered) = partition_overlaps(planned, |(_, plan)| plan.item.path.as_path());
         for (id, plan) in &mut kept {
             plan.covers = covered_candidates(discovery, id, &plan.item.path);
         }
-        let excluded = covered
-            .into_iter()
-            .map(|((id, plan), overlap)| exclusion(&kept, id, &plan, overlap))
-            .collect();
+        excluded.extend(
+            covered
+                .into_iter()
+                .map(|((id, plan), overlap)| exclusion(&kept, id, &plan, overlap)),
+        );
         let preview_id = format!("p{}", state.next_id());
         let preview = FfiPreview {
             preview_id: preview_id.clone(),
@@ -149,6 +169,7 @@ impl TinySession {
             expires_at: Instant::now() + ttl,
             expires_at_wall: SystemTime::now() + ttl,
             consumed: false,
+            selected,
         });
         Ok(preview)
     }
@@ -302,6 +323,12 @@ impl TinySession {
         let discovery = discovery
             .filter(|d| d.id == preview.discovery_id)
             .ok_or_else(|| invalid("discovery was replaced"))?;
+        // Defense in depth for PC-C3: preview already excluded these.
+        if preview.items.iter().any(|(id, plan)| {
+            !unselected_review(discovery, id, &plan.item.path, &preview.selected).is_empty()
+        }) {
+            return Err(invalid("an item would move an unselected review item"));
+        }
         preview.consumed = true;
         Ok((preview.items.clone(), discovery.options.clone()))
     }
@@ -404,6 +431,29 @@ fn covered_candidates(discovery: &StoredDiscovery, id: &str, path: &Path) -> Vec
         .collect();
     covered.sort_by(|a, b| (&a.path, &a.category_id).cmp(&(&b.path, &b.category_id)));
     covered
+}
+
+/// Review-risk candidates at `path` or inside it that the user did not
+/// select, sorted. Moving `path` would move them without explicit consent.
+fn unselected_review(
+    discovery: &StoredDiscovery,
+    id: &str,
+    path: &Path,
+    selected: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut ids: Vec<String> = discovery
+        .candidates
+        .iter()
+        .filter(|(other, candidate)| {
+            *other != id
+                && candidate.item.risk != RiskLevel::Safe
+                && candidate.item.path.starts_with(path)
+                && !selected.contains(*other)
+        })
+        .map(|(other, _)| other.clone())
+        .collect();
+    ids.sort();
+    ids
 }
 
 /// Resolves selected IDs against the stored discovery only.

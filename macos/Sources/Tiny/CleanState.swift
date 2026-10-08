@@ -68,10 +68,19 @@ final class CleanState {
             && category.risk != .destructive && !category.candidates.isEmpty
     }
 
-    /// Only safe Move-to-Trash categories start selected, and only their safe items.
+    /// Only safe Move-to-Trash categories start selected, and only safe items that
+    /// would not carry a review item along (the same path or an ancestor of one).
     static func preselected(_ discovery: FfiDiscovery) -> Set<String> {
-        Set(discovery.categories.filter { isSelectable($0) && $0.risk == .safe }
-            .flatMap(\.candidates).filter { $0.risk == .safe }.map(\.id))
+        let review = discovery.categories.flatMap(\.candidates).filter { $0.risk != .safe }.map(\.path)
+        return Set(discovery.categories.filter { isSelectable($0) && $0.risk == .safe }
+            .flatMap(\.candidates)
+            .filter { candidate in candidate.risk == .safe && !review.contains { contains(candidate.path, $0) } }
+            .map(\.id))
+    }
+
+    /// Whether moving `ancestor` moves `path`: the same path or one inside it.
+    static func contains(_ ancestor: String, _ path: String) -> Bool {
+        path == ancestor || path.hasPrefix(ancestor.hasSuffix("/") ? ancestor : ancestor + "/")
     }
 
     // MARK: Scan

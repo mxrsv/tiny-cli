@@ -127,6 +127,9 @@ pub enum FfiExclusionReason {
     Duplicate { kept_candidate_id: String },
     /// A selected ancestor moves this path with it.
     InsideSelected { parent_candidate_id: String },
+    /// Moving this path would also move Review-risk candidates the user did
+    /// not select (PC-C3); it is kept only when all of them are selected.
+    CoversUnselectedReview { candidate_ids: Vec<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]

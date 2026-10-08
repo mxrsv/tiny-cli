@@ -58,6 +58,8 @@ enum CleanCopy {
         switch reason {
         case .duplicate: return "Same path as another selected item; moved once."
         case .insideSelected: return "Inside another selected folder; moves with it."
+        case .coversUnselectedReview(let ids):
+            return "Not moved: it contains \(ids.count) review \(ids.count == 1 ? "item" : "items") you did not select. Select \(ids.count == 1 ? "it" : "them") too, or keep this folder."
         }
     }
 

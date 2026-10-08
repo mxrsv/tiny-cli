@@ -868,3 +868,100 @@ fn execution_revalidates_running_apps_and_failed_probes() {
     assert!(trash.moved.lock().unwrap().is_empty());
     remove(&dir);
 }
+
+// ---------- PC-C3: review items need explicit selection ----------
+
+/// `logs` (safe) lists `Logs/*`; `jetbrains` (review) lists `Logs/JetBrains/*`.
+fn review_inside_safe(dir: &Path) -> Vec<Box<dyn CleanProvider>> {
+    let mut jetbrains = Fixture::new("jetbrains", &dir.join("Logs/JetBrains"));
+    jetbrains.risk = RiskLevel::Review;
+    vec![
+        Box::new(Fixture::new("logs", &dir.join("Logs"))),
+        Box::new(jetbrains),
+    ]
+}
+
+fn review_fixture(label: &str) -> PathBuf {
+    let dir = fixture_dir(label, &[], 0);
+    std::fs::create_dir_all(dir.join("Logs/JetBrains/Product")).unwrap();
+    std::fs::write(dir.join("Logs/JetBrains/Product/log"), b"12").unwrap();
+    std::fs::write(dir.join("Logs/other"), b"1").unwrap();
+    dir
+}
+
+fn candidate_ids(discovery: &FfiDiscovery, category: &str) -> Vec<String> {
+    discovery
+        .categories
+        .iter()
+        .filter(|c| c.id == category)
+        .flat_map(|c| c.candidates.iter().map(|c| c.id.clone()))
+        .collect()
+}
+
+#[test]
+fn a_selected_item_never_carries_an_unselected_review_candidate() {
+    let dir = review_fixture("review-inside");
+    let session = TinySession::new();
+    let discovery = discover(&session, &review_inside_safe(&dir)).unwrap();
+    let safe = candidate_ids(&discovery, "logs");
+    let review = candidate_ids(&discovery, "jetbrains");
+    assert_eq!((safe.len(), review.len()), (2, 1));
+
+    let preview = session.clean_preview(safe.clone()).unwrap();
+    let kept: Vec<_> = preview.items.iter().map(|i| i.path.clone()).collect();
+    assert_eq!(
+        kept,
+        vec![dir.join("Logs/other").to_string_lossy().to_string()]
+    );
+    let blocked = preview
+        .excluded
+        .iter()
+        .find(|e| e.path.ends_with("JetBrains"))
+        .expect("the review-carrying folder is excluded");
+    assert_eq!(
+        blocked.reason,
+        FfiExclusionReason::CoversUnselectedReview {
+            candidate_ids: review.clone()
+        }
+    );
+
+    // Selecting the review child too is explicit consent: the folder is kept.
+    let both = session
+        .clean_preview(safe.iter().chain(&review).cloned().collect())
+        .unwrap();
+    assert!(both.items.iter().any(|i| i.path.ends_with("JetBrains")));
+    remove(&dir);
+}
+
+#[test]
+fn execute_refuses_a_preview_that_would_move_an_unselected_review_item() {
+    let dir = review_fixture("review-execute");
+    let session = TinySession::new();
+    let discovery = discover(&session, &review_inside_safe(&dir)).unwrap();
+    let review = candidate_ids(&discovery, "jetbrains");
+    let all = ids(&discovery);
+    let preview = session.clean_preview(all).unwrap();
+    // Forge the stored selection, as a future bug might.
+    session
+        .clean_state()
+        .preview
+        .as_mut()
+        .unwrap()
+        .selected
+        .remove(&review[0]);
+    let root = dir.clone();
+    let factory = move |_: &CleanOptions| review_inside_safe(&root);
+    let trash = FakeTrash::default();
+    let run = session.execute_clean(
+        &preview.preview_id,
+        &factory,
+        &NotRunning,
+        &trash,
+        &CancellationToken::default(),
+        &Progress::default(),
+    );
+    assert!(matches!(run, Err(FfiError::PreviewInvalid { .. })));
+    assert!(trash.moved.lock().unwrap().is_empty());
+    assert!(dir.join("Logs/JetBrains/Product").exists());
+    remove(&dir);
+}
