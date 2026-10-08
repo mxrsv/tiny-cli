@@ -42,6 +42,9 @@ impl CleanProvider for GoCache {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn available(&self) -> bool {
         self.runner.which("go")
     }

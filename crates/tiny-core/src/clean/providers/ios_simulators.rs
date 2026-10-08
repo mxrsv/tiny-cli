@@ -31,6 +31,9 @@ impl CleanProvider for IosSimulators {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn requires_app_quit(&self) -> Option<&'static str> {
         Some(APP)
     }

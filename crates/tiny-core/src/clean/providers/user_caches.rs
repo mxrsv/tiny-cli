@@ -21,6 +21,12 @@ impl CleanProvider for UserCaches {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn item_apps(&self, path: &Path) -> Vec<String> {
+        owning_app(path).map(String::from).into_iter().collect()
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,

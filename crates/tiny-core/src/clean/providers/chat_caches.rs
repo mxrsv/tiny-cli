@@ -23,6 +23,7 @@ const CHAT_PATHS: &[(&str, &str)] = &[
 /// *.ru.keepcoder.Telegram/account-*/postbox/media`. We resolve via
 /// read_dir at discover time. Locked by "Telegram".
 const TELEGRAM_GROUP_CONTAINERS: &str = "Library/Group Containers";
+const TELEGRAM_APP: &str = "Telegram";
 
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
@@ -52,6 +53,29 @@ impl CleanProvider for ChatCaches {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn item_apps(&self, path: &std::path::Path) -> Vec<String> {
+        let owner = home().and_then(|h| {
+            if path.starts_with(h.join(TELEGRAM_GROUP_CONTAINERS)) {
+                return Some(TELEGRAM_APP);
+            }
+            CHAT_PATHS
+                .iter()
+                .find(|(rel, _)| path == h.join(rel))
+                .map(|(_, app)| *app)
+        });
+        // An unrecognised path is gated on every chat app rather than none.
+        owner.map(|app| vec![app.to_string()]).unwrap_or_else(|| {
+            CHAT_PATHS
+                .iter()
+                .map(|(_, app)| *app)
+                .chain([TELEGRAM_APP])
+                .map(String::from)
+                .collect()
+        })
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,
@@ -69,7 +93,7 @@ impl CleanProvider for ChatCaches {
             items.extend(root_as_item(ctx, &path, ID, LABEL, RiskLevel::Review));
         }
         // Telegram: glob resolution.
-        let telegram_running = ctx.app_running("Telegram")?;
+        let telegram_running = ctx.app_running(TELEGRAM_APP)?;
         for tg_media in telegram_media_dirs(ctx, &h.join(TELEGRAM_GROUP_CONTAINERS)) {
             if telegram_running {
                 continue;

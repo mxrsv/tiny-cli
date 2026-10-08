@@ -43,6 +43,9 @@ impl CleanProvider for CargoCache {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn available(&self) -> bool {
         home().map(|h| h.join(".cargo").is_dir()).unwrap_or(false)
     }
@@ -66,19 +69,29 @@ impl CleanProvider for CargoCache {
         Ok(items)
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
-        for item in items {
-            debug_assert!(
-                is_safe_cargo_path(&item.path),
-                "cargo provider produced unsafe path: {}",
-                item.path.display()
-            );
+        let (safe, unsafe_items): (Vec<CleanItem>, Vec<CleanItem>) = items
+            .iter()
+            .cloned()
+            .partition(|item| is_safe_cargo_path(&item.path));
+        let mut report = execute_per_item(&safe, action, CARGO_ID)?;
+        for item in unsafe_items {
+            report
+                .failed
+                .push((item.path, "refused: not a pinned cargo cache dir".into()));
         }
-        execute_per_item(items, action, CARGO_ID)
+        Ok(report)
+    }
+    fn check_item(&self, path: &std::path::Path) -> std::result::Result<(), String> {
+        if is_safe_cargo_path(path) {
+            Ok(())
+        } else {
+            Err("not a pinned cargo cache dir".into())
+        }
     }
 }
 
 /// Guard: returned only true for paths under `~/.cargo/<one of CARGO_SUBDIRS>`.
-/// Used as a debug_assert in execute() and as a unit-testable invariant.
+/// Enforced by execute() and by the desktop's per-item check.
 pub fn is_safe_cargo_path(path: &std::path::Path) -> bool {
     let h = match home() {
         Some(h) => h,
@@ -114,6 +127,9 @@ impl CleanProvider for NpmCache {
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn available(&self) -> bool {
         self.runner.which("npm")
@@ -164,6 +180,9 @@ impl CleanProvider for PnpmStore {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn available(&self) -> bool {
         self.runner.which("pnpm")
     }
@@ -212,6 +231,9 @@ impl CleanProvider for YarnCache {
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
     }
     fn available(&self) -> bool {
         self.runner.which("yarn")

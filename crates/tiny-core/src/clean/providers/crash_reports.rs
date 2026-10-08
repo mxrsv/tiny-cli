@@ -28,6 +28,9 @@ impl CleanProvider for CrashReports {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Safe
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let mut items = Vec::new();
         if let Some(h) = home() {

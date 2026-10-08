@@ -3,19 +3,26 @@
 //! The session keeps what discovery found (paths, fingerprints, roots and
 //! the options used). A preview is built only from those candidate IDs, and
 //! execution only from a preview ID, so Swift never hands Rust a path to act
-//! on.
+//! on. Execution moves each path through the core `Trash` route and never
+//! calls a provider's own cleanup.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use tiny_core::clean::checked_execute::{
+    execute_checked, CheckedExecReport, ExecContext, ItemOutcome, StopReason,
+};
 use tiny_core::clean::discover::{
     discover_checked, select_providers_with, validate_options, CategoryOutcome, CheckedCategory,
 };
+use tiny_core::clean::finder_trash::{FinderTrash, Trash, TrashError};
 use tiny_core::clean::fs_safe::{fingerprint, PathFingerprint};
 use tiny_core::clean::process::{AppProbe, RunnerProbe};
-use tiny_core::clean::providers::{category_family, known_category_ids, CleanProvider};
+use tiny_core::clean::providers::{
+    all_providers_with, category_family, known_category_ids, CleanProvider,
+};
 use tiny_core::clean::scan_context::{ScanContext, Unreadable};
 use tiny_core::clean::trash_plan::{partition_overlaps, Overlap, PlannedItem};
 use tiny_core::clean::types::{CleanItem, RiskLevel};
@@ -25,113 +32,14 @@ use tiny_core::runner::{CommandRunner, ToolLookup, ToolRunner};
 use crate::session::CancellationToken;
 use crate::{FfiError, ProgressListener, TinySession};
 
+mod records;
+#[cfg(test)]
+mod tests;
+
+pub use records::*;
+
 /// How long a confirmed preview stays executable.
 pub const PREVIEW_TTL: Duration = Duration::from_secs(15 * 60);
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiCleanOptions {
-    /// Category IDs to scan; empty means "filter by risk flags".
-    pub categories: Vec<String>,
-    pub include_review: bool,
-    pub include_destructive: bool,
-    pub idle_days: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum FfiRisk {
-    Safe,
-    Review,
-    Destructive,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
-pub enum FfiCategoryStatus {
-    Found,
-    /// The owning app is running, so the category was not scanned.
-    AppRunning {
-        app: String,
-    },
-    /// A required tool or safety probe is unavailable.
-    Unavailable {
-        reason: String,
-    },
-    Failed {
-        detail: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiUnreadablePath {
-    pub path: String,
-    pub entries: u64,
-    pub detail: String,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiCleanCandidate {
-    /// Opaque; valid only for the discovery that returned it.
-    pub id: String,
-    pub path: String,
-    pub size_bytes: u64,
-    /// Entries the size walk could not read; non-zero makes `size_bytes` a
-    /// lower bound.
-    pub unreadable_entries: u64,
-    pub risk: FfiRisk,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiCleanCategory {
-    pub id: String,
-    pub label: String,
-    /// `dev`, `user-storage` or `system`; `None` for an unregistered ID.
-    pub family: Option<String>,
-    pub risk: FfiRisk,
-    pub status: FfiCategoryStatus,
-    pub candidates: Vec<FfiCleanCandidate>,
-    pub total_bytes: u64,
-    /// Listing or search paths with unreadable entries.
-    pub unreadable: Vec<FfiUnreadablePath>,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiDiscovery {
-    pub discovery_id: String,
-    pub categories: Vec<FfiCleanCategory>,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiPreviewItem {
-    pub candidate_id: String,
-    pub category_id: String,
-    pub path: String,
-    pub size_bytes: u64,
-    pub risk: FfiRisk,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
-pub enum FfiExclusionReason {
-    /// Another selected category found the same path.
-    Duplicate { kept_candidate_id: String },
-    /// A selected ancestor moves this path with it.
-    InsideSelected { parent_candidate_id: String },
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiPreviewExclusion {
-    pub candidate_id: String,
-    pub path: String,
-    pub reason: FfiExclusionReason,
-}
-
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FfiPreview {
-    pub preview_id: String,
-    pub items: Vec<FfiPreviewItem>,
-    pub excluded: Vec<FfiPreviewExclusion>,
-    /// Sum of `items` sizes as measured at discovery. Not freed space.
-    pub bytes_selected: u64,
-    pub expires_in_seconds: u64,
-}
 
 /// Session-held cleanup state. Never locked across provider work, Trash
 /// calls or progress callbacks.
@@ -144,7 +52,6 @@ pub(crate) struct CleanState {
     ttl: Option<Duration>,
 }
 
-#[allow(dead_code)] // `options` is read by execution (T4c)
 struct StoredDiscovery {
     id: u64,
     options: CleanOptions,
@@ -156,9 +63,9 @@ struct StoredCandidate {
     /// `None` when the path could not be stat'ed (e.g. a tool placeholder).
     fingerprint: Option<PathFingerprint>,
     roots: Arc<Vec<PathBuf>>,
+    desktop_action: FfiDesktopAction,
 }
 
-#[allow(dead_code)] // read by execution (T4c)
 struct StoredPreview {
     id: String,
     discovery_id: u64,
@@ -233,12 +140,37 @@ impl TinySession {
         });
         Ok(preview)
     }
+
+    /// Moves the preview's paths to Trash through Finder. The preview is
+    /// consumed before the first move, so it can never run twice, even
+    /// after a panic. Returns a per-item report; `AutomationDenied` only
+    /// when Finder access was denied before anything moved.
+    pub fn clean_execute(
+        &self,
+        preview_id: String,
+        token: Arc<CancellationToken>,
+        progress: Arc<dyn ProgressListener>,
+    ) -> Result<FfiExecReport, FfiError> {
+        let runner = app_runner();
+        let probe = RunnerProbe(runner.as_ref());
+        let providers = |options: &CleanOptions| all_providers_with(options, runner.clone());
+        self.execute_clean(
+            &preview_id,
+            &providers,
+            &probe,
+            &FinderTrash,
+            &token,
+            progress.as_ref(),
+        )
+    }
 }
 
 /// The app's runner: `PATH`, then the Homebrew prefixes.
 fn app_runner() -> Arc<dyn CommandRunner> {
     Arc::new(ToolRunner::new(ToolLookup::app()))
 }
+
+type ProviderFactory<'a> = &'a dyn Fn(&CleanOptions) -> Vec<Box<dyn CleanProvider>>;
 
 impl TinySession {
     /// Lock on cleanup state. Locked sections never run foreign or provider
@@ -275,7 +207,10 @@ impl TinySession {
         let categories = checked
             .categories
             .into_iter()
-            .map(|category| store_category(id, category, &mut candidates))
+            .map(|category| {
+                let action = desktop_action(providers, &category.id);
+                store_category(id, category, action, &mut candidates)
+            })
             .collect();
         state.discovery = Some(StoredDiscovery {
             id,
@@ -287,11 +222,85 @@ impl TinySession {
             categories,
         })
     }
+
+    /// `clean_execute` with injected providers, probe and Trash (the test
+    /// seam).
+    pub(crate) fn execute_clean(
+        &self,
+        preview_id: &str,
+        providers: ProviderFactory<'_>,
+        probe: &dyn AppProbe,
+        trash: &dyn Trash,
+        token: &CancellationToken,
+        progress: &dyn ProgressListener,
+    ) -> Result<FfiExecReport, FfiError> {
+        let _gate = self.begin()?;
+        let (items, options) = self.consume_preview(preview_id)?;
+        let providers = providers(&options);
+        let plan: Vec<PlannedItem> = items.iter().map(|(_, plan)| plan.clone()).collect();
+        let report = |p: tiny_core::progress::Progress| progress.on_progress(p.into());
+        let ctx = ExecContext {
+            providers: &providers,
+            probe,
+            trash,
+            cancel: Some(token.flag()),
+            progress: Some(&report),
+        };
+        let executed = execute_checked(&plan, &ctx);
+        if executed.stopped == Some(StopReason::AutomationDenied) && executed.moved_count() == 0 {
+            return Err(FfiError::AutomationDenied {
+                detail: denial_detail(&executed),
+            });
+        }
+        Ok(exec_report(&items, executed))
+    }
+
+    /// Marks the preview consumed, under the lock, before any mutation.
+    fn consume_preview(
+        &self,
+        preview_id: &str,
+    ) -> Result<(Vec<(String, PlannedItem)>, CleanOptions), FfiError> {
+        let invalid = |detail: &str| FfiError::PreviewInvalid {
+            detail: detail.into(),
+        };
+        let mut state = self.clean_state();
+        let state = &mut *state;
+        let discovery = state.discovery.as_ref();
+        let preview = state
+            .preview
+            .as_mut()
+            .filter(|p| p.id == preview_id)
+            .ok_or_else(|| invalid("unknown or replaced preview"))?;
+        if preview.consumed {
+            return Err(invalid("preview already used"));
+        }
+        if Instant::now() >= preview.expires_at {
+            return Err(invalid("preview expired"));
+        }
+        let discovery = discovery
+            .filter(|d| d.id == preview.discovery_id)
+            .ok_or_else(|| invalid("discovery was replaced"))?;
+        preview.consumed = true;
+        Ok((preview.items.clone(), discovery.options.clone()))
+    }
+}
+
+fn desktop_action(providers: &[Box<dyn CleanProvider>], id: &str) -> FfiDesktopAction {
+    match providers.iter().find(|p| p.id() == id) {
+        Some(p) if p.risk() == RiskLevel::Destructive => FfiDesktopAction::ReportOnly {
+            reason: FfiReportOnlyReason::Destructive,
+        },
+        Some(p) if p.desktop_trash_paths() => FfiDesktopAction::MoveToTrash,
+        _ => FfiDesktopAction::ReportOnly {
+            reason: FfiReportOnlyReason::NotPerPathTrash,
+        },
+    }
 }
 
 fn store_category(
     discovery_id: u64,
     category: CheckedCategory,
+    desktop_action: FfiDesktopAction,
     candidates: &mut HashMap<String, StoredCandidate>,
 ) -> FfiCleanCategory {
     let family = known_category_ids()
@@ -303,6 +312,7 @@ fn store_category(
         family,
         risk: category.risk.into(),
         status: FfiCategoryStatus::Found,
+        desktop_action,
         candidates: Vec::new(),
         total_bytes: 0,
         unreadable: Vec::new(),
@@ -331,6 +341,7 @@ fn store_category(
                         fingerprint: fingerprint(&item.path).ok(),
                         item,
                         roots: roots.clone(),
+                        desktop_action,
                     },
                 );
             }
@@ -368,15 +379,18 @@ fn plan_selection(
                     .ok_or_else(|| FfiError::PreviewInvalid {
                         detail: format!("unknown candidate {id}; scan again"),
                     })?;
+            let path = candidate.item.path.display();
+            if candidate.desktop_action != FfiDesktopAction::MoveToTrash {
+                return Err(FfiError::InvalidInput {
+                    detail: format!("{path} is report-only on the desktop"),
+                });
+            }
             let fingerprint =
                 candidate
                     .fingerprint
                     .clone()
                     .ok_or_else(|| FfiError::InvalidInput {
-                        detail: format!(
-                            "{} is not a file-system path that can be moved to Trash",
-                            candidate.item.path.display()
-                        ),
+                        detail: format!("{path} could not be inspected at discovery"),
                     })?;
             let plan = PlannedItem {
                 item: candidate.item.clone(),
@@ -419,6 +433,46 @@ fn preview_item(id: &str, plan: &PlannedItem) -> FfiPreviewItem {
     }
 }
 
+fn exec_report(items: &[(String, PlannedItem)], executed: CheckedExecReport) -> FfiExecReport {
+    let count = |keep: fn(&ItemOutcome) -> bool| executed.count(keep) as u64;
+    let summary = FfiExecReport {
+        results: Vec::new(),
+        bytes_selected: executed.bytes_selected(),
+        bytes_moved_to_trash: executed.bytes_moved_to_trash(),
+        moved_count: executed.moved_count() as u64,
+        failed_count: count(|o| matches!(o, ItemOutcome::Failed { .. })),
+        skipped_count: count(|o| matches!(o, ItemOutcome::Skipped(_))),
+        not_attempted_count: count(|o| matches!(o, ItemOutcome::NotAttempted)),
+        stopped: executed.stopped.clone().map(Into::into),
+    };
+    let results = items
+        .iter()
+        .zip(executed.results)
+        .map(|((id, _), result)| FfiItemResult {
+            candidate_id: id.clone(),
+            category_id: result.item.category_id,
+            path: result.item.path.to_string_lossy().into_owned(),
+            size_bytes: result.item.size,
+            outcome: result.outcome.into(),
+        })
+        .collect();
+    FfiExecReport { results, ..summary }
+}
+
+fn denial_detail(executed: &CheckedExecReport) -> String {
+    executed
+        .results
+        .iter()
+        .find_map(|r| match &r.outcome {
+            ItemOutcome::Failed {
+                error: TrashError::AutomationDenied(detail),
+                ..
+            } => Some(detail.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 fn total_size<'a>(items: impl Iterator<Item = &'a CleanItem>) -> u64 {
     items.fold(0, |sum, item| sum.saturating_add(item.size))
 }
@@ -428,307 +482,5 @@ fn unreadable_path((path, unreadable): (PathBuf, Unreadable)) -> FfiUnreadablePa
         path: path.to_string_lossy().into_owned(),
         entries: unreadable.entries,
         detail: unreadable.first_error,
-    }
-}
-
-impl From<FfiCleanOptions> for CleanOptions {
-    fn from(options: FfiCleanOptions) -> Self {
-        Self {
-            category: options.categories,
-            include_review: options.include_review,
-            include_destructive: options.include_destructive,
-            idle_days: options.idle_days,
-        }
-    }
-}
-
-impl From<RiskLevel> for FfiRisk {
-    fn from(risk: RiskLevel) -> Self {
-        match risk {
-            RiskLevel::Safe => Self::Safe,
-            RiskLevel::Review => Self::Review,
-            RiskLevel::Destructive => Self::Destructive,
-        }
-    }
-}
-
-#[cfg(test)]
-pub(crate) mod test_support {
-    use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
-
-    use tiny_core::clean::fs_safe::{dir_size_checked, list_children};
-    use tiny_core::clean::process::AppProbe;
-    use tiny_core::clean::providers::CleanProvider;
-    use tiny_core::clean::scan_context::ScanContext;
-    use tiny_core::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
-    use tiny_core::error::Result;
-
-    use crate::{FfiProgress, ProgressListener};
-
-    /// Lists `root`'s children as candidates. Execution must never reach
-    /// `execute`: the desktop path acts through the `Trash` trait only.
-    pub struct Fixture {
-        pub id: &'static str,
-        pub root: PathBuf,
-        pub risk: RiskLevel,
-        pub app: Option<&'static str>,
-        pub extra: Vec<PathBuf>,
-    }
-
-    impl Fixture {
-        pub fn new(id: &'static str, root: &Path) -> Self {
-            Self {
-                id,
-                root: root.to_path_buf(),
-                risk: RiskLevel::Safe,
-                app: None,
-                extra: Vec::new(),
-            }
-        }
-    }
-
-    impl CleanProvider for Fixture {
-        fn id(&self) -> &'static str {
-            self.id
-        }
-        fn label(&self) -> &'static str {
-            self.id
-        }
-        fn risk(&self) -> RiskLevel {
-            self.risk
-        }
-        fn requires_app_quit(&self) -> Option<&'static str> {
-            self.app
-        }
-        fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
-            let paths = list_children(&self.root, ctx)
-                .into_iter()
-                .chain(self.extra.iter().cloned());
-            Ok(paths
-                .map(|path| CleanItem {
-                    category_id: self.id.into(),
-                    category_label: self.id.into(),
-                    size: dir_size_checked(&path, ctx),
-                    path,
-                    risk: self.risk,
-                })
-                .collect())
-        }
-        fn execute(&self, _: &[CleanItem], _: ExecAction) -> Result<ExecReport> {
-            panic!("the desktop path must never call provider.execute");
-        }
-    }
-
-    /// No app is running.
-    pub struct NotRunning;
-
-    impl AppProbe for NotRunning {
-        fn probe(&self, _: &str) -> std::result::Result<bool, String> {
-            Ok(false)
-        }
-    }
-
-    #[derive(Default)]
-    pub struct Progress(pub Mutex<Vec<FfiProgress>>);
-
-    impl ProgressListener for Progress {
-        fn on_progress(&self, progress: FfiProgress) {
-            self.0.lock().unwrap().push(progress);
-        }
-    }
-
-    /// A unique temp dir with `names` as children holding `len` bytes each.
-    pub fn fixture_dir(label: &str, names: &[&str], len: usize) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "tiny-ffi-clean-{label}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        for name in names {
-            std::fs::write(dir.join(name), vec![b'x'; len]).unwrap();
-        }
-        dir
-    }
-
-    pub fn remove(dir: &Path) {
-        let _ = tiny_core::clean::fs_safe::remove_recursive_safe(dir);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::test_support::*;
-    use super::*;
-
-    fn options() -> CleanOptions {
-        CleanOptions::default()
-    }
-
-    fn discover(
-        session: &TinySession,
-        providers: &[Box<dyn CleanProvider>],
-    ) -> Result<FfiDiscovery, FfiError> {
-        session.discover_clean(
-            options(),
-            providers,
-            &NotRunning,
-            &CancellationToken::default(),
-            &Progress::default(),
-        )
-    }
-
-    fn ids(discovery: &FfiDiscovery) -> Vec<String> {
-        discovery
-            .categories
-            .iter()
-            .flat_map(|c| c.candidates.iter().map(|c| c.id.clone()))
-            .collect()
-    }
-
-    #[test]
-    fn preview_is_built_from_discovered_ids_only() {
-        let dir = fixture_dir("preview", &["a", "b"], 4);
-        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(Fixture::new("logs", &dir))];
-        let session = TinySession::new();
-        let progress = Progress::default();
-        let discovery = session
-            .discover_clean(
-                options(),
-                &providers,
-                &NotRunning,
-                &CancellationToken::default(),
-                &progress,
-            )
-            .unwrap();
-        assert!(
-            !progress.0.lock().unwrap().is_empty(),
-            "progress reached the caller"
-        );
-        let category = &discovery.categories[0];
-        assert_eq!(category.status, FfiCategoryStatus::Found);
-        assert_eq!(category.total_bytes, 8);
-        assert_eq!(category.family, None, "fixture IDs are not registered");
-
-        let preview = session.clean_preview(ids(&discovery)).unwrap();
-        assert_eq!(preview.items.len(), 2);
-        assert_eq!(preview.bytes_selected, 8);
-        assert!(preview.excluded.is_empty());
-        assert_eq!(preview.expires_in_seconds, PREVIEW_TTL.as_secs());
-
-        let forged = session.clean_preview(vec!["d1-99".into()]);
-        assert!(matches!(forged, Err(FfiError::PreviewInvalid { .. })));
-        let empty = session.clean_preview(Vec::new());
-        assert!(matches!(empty, Err(FfiError::InvalidInput { .. })));
-        remove(&dir);
-    }
-
-    #[test]
-    fn a_new_discovery_invalidates_old_candidate_ids() {
-        let dir = fixture_dir("replaced", &["a"], 1);
-        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(Fixture::new("logs", &dir))];
-        let session = TinySession::new();
-        let old = ids(&discover(&session, &providers).unwrap());
-        let new = ids(&discover(&session, &providers).unwrap());
-        assert_ne!(old, new);
-        assert!(matches!(
-            session.clean_preview(old),
-            Err(FfiError::PreviewInvalid { .. })
-        ));
-        assert!(session.clean_preview(new).is_ok());
-        remove(&dir);
-    }
-
-    #[test]
-    fn overlapping_selections_are_excluded_with_a_reason() {
-        let dir = fixture_dir("overlap", &[], 0);
-        std::fs::create_dir(dir.join("Caches")).unwrap();
-        std::fs::write(dir.join("Caches/x"), b"12").unwrap();
-        // `caches` lists `Caches`; `browser` finds `Caches/x` and `Caches`.
-        let mut browser = Fixture::new("browser", &dir.join("Caches"));
-        browser.extra = vec![dir.join("Caches")];
-        let providers: Vec<Box<dyn CleanProvider>> =
-            vec![Box::new(Fixture::new("caches", &dir)), Box::new(browser)];
-        let session = TinySession::new();
-        let discovery = discover(&session, &providers).unwrap();
-        let preview = session.clean_preview(ids(&discovery)).unwrap();
-        assert_eq!(preview.items.len(), 1);
-        assert_eq!(
-            preview.bytes_selected, 2,
-            "covered bytes are not double-counted"
-        );
-        let kept = preview.items[0].candidate_id.clone();
-        let reasons: Vec<_> = preview.excluded.iter().map(|e| e.reason.clone()).collect();
-        assert!(reasons.contains(&FfiExclusionReason::Duplicate {
-            kept_candidate_id: kept.clone()
-        }));
-        assert!(reasons.contains(&FfiExclusionReason::InsideSelected {
-            parent_candidate_id: kept
-        }));
-        remove(&dir);
-    }
-
-    #[test]
-    fn a_path_without_a_fingerprint_cannot_be_previewed() {
-        let dir = fixture_dir("placeholder", &[], 0);
-        let mut docker_like = Fixture::new("tool", &dir);
-        docker_like.extra = vec![PathBuf::from("<docker:images>")];
-        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(docker_like)];
-        let session = TinySession::new();
-        let discovery = discover(&session, &providers).unwrap();
-        assert!(matches!(
-            session.clean_preview(ids(&discovery)),
-            Err(FfiError::InvalidInput { .. })
-        ));
-        remove(&dir);
-    }
-
-    #[test]
-    fn cancelled_discovery_stores_nothing() {
-        let dir = fixture_dir("cancel", &["a"], 1);
-        let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(Fixture::new("logs", &dir))];
-        let session = TinySession::new();
-        let token = CancellationToken::default();
-        token.cancel();
-        let result = session.discover_clean(
-            options(),
-            &providers,
-            &NotRunning,
-            &token,
-            &Progress::default(),
-        );
-        assert!(matches!(result, Err(FfiError::Cancelled)));
-        assert!(!session.is_busy());
-        assert!(matches!(
-            session.clean_preview(vec!["d1-0".into()]),
-            Err(FfiError::PreviewInvalid { .. })
-        ));
-        remove(&dir);
-    }
-
-    #[test]
-    fn discovery_is_rejected_while_another_operation_runs() {
-        let session = TinySession::new();
-        let _gate = session.begin().unwrap();
-        assert!(matches!(discover(&session, &[]), Err(FfiError::Busy)));
-    }
-
-    #[test]
-    fn invalid_options_are_rejected_before_scanning() {
-        let session = TinySession::new();
-        let mut bad = options();
-        bad.idle_days = 0;
-        let result = session.discover_clean(
-            bad,
-            &[],
-            &NotRunning,
-            &CancellationToken::default(),
-            &Progress::default(),
-        );
-        assert!(matches!(result, Err(FfiError::InvalidInput { .. })));
     }
 }

@@ -1,5 +1,7 @@
+pub mod checked_execute;
 pub mod discover;
 pub mod execute;
+pub mod finder_trash;
 pub mod fs_safe;
 pub mod process;
 pub mod providers;

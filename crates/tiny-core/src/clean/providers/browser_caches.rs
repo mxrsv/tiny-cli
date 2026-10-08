@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
@@ -57,6 +57,29 @@ impl CleanProvider for BrowserCaches {
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
+    }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn item_apps(&self, path: &Path) -> Vec<String> {
+        let owner = home().and_then(|h| {
+            if path.starts_with(h.join(FIREFOX_PROFILES_ROOT)) {
+                return Some(FIREFOX_APP);
+            }
+            BROWSER_CACHE_PATHS
+                .iter()
+                .find(|(rel, _)| path == h.join(rel))
+                .map(|(_, app)| *app)
+        });
+        // An unrecognised path is gated on every browser rather than none.
+        owner.map(|app| vec![app.to_string()]).unwrap_or_else(|| {
+            BROWSER_CACHE_PATHS
+                .iter()
+                .map(|(_, app)| *app)
+                .chain([FIREFOX_APP])
+                .map(String::from)
+                .collect()
+        })
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {

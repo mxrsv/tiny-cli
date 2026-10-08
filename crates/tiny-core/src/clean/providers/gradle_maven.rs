@@ -28,6 +28,9 @@ impl CleanProvider for GradleMaven {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn available(&self) -> bool {
         let h = match home() {
             Some(h) => h,

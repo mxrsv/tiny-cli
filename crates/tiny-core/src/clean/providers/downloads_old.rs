@@ -34,6 +34,9 @@ impl CleanProvider for DownloadsOld {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn available(&self) -> bool {
         home()
             .map(|h| is_dir_safe(&h.join("Downloads")))

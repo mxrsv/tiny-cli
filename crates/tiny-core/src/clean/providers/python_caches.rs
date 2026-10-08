@@ -36,6 +36,9 @@ impl CleanProvider for PythonCaches {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn available(&self) -> bool {
         !self.search_roots.is_empty()
     }

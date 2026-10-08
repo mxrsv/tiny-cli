@@ -56,6 +56,24 @@ impl CleanProvider for StreamingCaches {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
+    fn item_apps(&self, path: &std::path::Path) -> Vec<String> {
+        let owner = home().and_then(|h| {
+            STREAMING_PATHS
+                .iter()
+                .find(|(rel, _)| path == h.join(rel))
+                .map(|(_, app)| *app)
+        });
+        // An unrecognised path is gated on every streaming app rather than none.
+        owner.map(|app| vec![app.to_string()]).unwrap_or_else(|| {
+            STREAMING_PATHS
+                .iter()
+                .map(|(_, app)| app.to_string())
+                .collect()
+        })
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let h = match home() {
             Some(h) => h,

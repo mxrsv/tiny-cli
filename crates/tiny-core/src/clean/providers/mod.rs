@@ -116,6 +116,27 @@ pub trait CleanProvider {
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>>;
 
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport>;
+
+    /// Deny by default. True only when cleanup is exactly "move each listed
+    /// path to Trash": the desktop then moves those paths itself and never
+    /// calls `execute`. Everything else is report-only on the desktop.
+    fn desktop_trash_paths(&self) -> bool {
+        false
+    }
+
+    /// Apps that must not be running when `path` is acted on.
+    fn item_apps(&self, _path: &Path) -> Vec<String> {
+        self.requires_app_quit()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    /// Provider-specific guard re-checked immediately before acting on
+    /// `path`; `Err` carries the reason it is refused.
+    fn check_item(&self, _path: &Path) -> std::result::Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Returns every provider in canonical id order. Filtering by risk level,
@@ -342,12 +363,9 @@ pub(crate) fn move_to_trash(path: &Path) -> Result<()> {
     let posix = path
         .to_str()
         .ok_or_else(|| engine_error!("non-utf8 path: {}", path.display()))?;
-    let script = "on run argv\n\
-                  tell application \"Finder\" to delete (POSIX file (item 1 of argv) as alias)\n\
-                  end run";
     let output = Command::new("osascript")
         .arg("-e")
-        .arg(script)
+        .arg(super::finder_trash::FINDER_DELETE_SCRIPT)
         .arg(posix)
         .output()
         .with_context(|| format!("failed to spawn osascript for {}", path.display()))?;
@@ -382,6 +400,110 @@ mod tests {
         assert_eq!(Family::Dev.label(), "Dev caches");
         assert_eq!(Family::UserStorage.label(), "User storage");
         assert_eq!(Family::System.label(), "System leftovers");
+    }
+
+    /// Deliberate desktop decision for every category. A new provider fails
+    /// this test until it is added here, so eligibility is never implicit.
+    const DESKTOP_TRASH: &[(&str, bool)] = &[
+        ("user-logs", true),
+        ("xcode-derived", true),
+        ("user-caches", true),
+        ("xcode-archives", true),
+        ("xcode-devicesupport", true),
+        ("cargo", true),
+        ("npm", true),
+        ("pnpm", true),
+        ("yarn", true),
+        ("node-modules", true),
+        ("python-caches", true),
+        ("rust-targets", true),
+        ("gradle-maven", true),
+        ("jetbrains", true),
+        ("vscode", true),
+        ("ios-simulators", true),
+        ("android-sdk", true),
+        ("go-cache", true),
+        // Runs a system-wide `docker system prune`, not a per-path move.
+        ("docker", false),
+        ("downloads-old", true),
+        ("screenshots-old", true),
+        ("mail-attachments", true),
+        ("streaming-caches", true),
+        ("chat-caches", true),
+        ("browser-caches", true),
+        ("quarantine", true),
+        ("crash-reports", true),
+        ("app-orphans", true),
+        // Destructive: `tmutil deletelocalsnapshots` and Empty Trash.
+        ("time-machine-local", false),
+        ("font-quicklook-caches", true),
+        ("trash", false),
+    ];
+
+    #[test]
+    fn every_category_has_a_deliberate_desktop_decision() {
+        let decided: Vec<&str> = DESKTOP_TRASH.iter().map(|(id, _)| *id).collect();
+        assert_eq!(decided, known_category_ids());
+        let runner: Arc<dyn CommandRunner> =
+            Arc::new(crate::runner::test_support::MockRunner::new());
+        let providers = all_providers_with(&crate::options::CleanOptions::default(), runner);
+        assert_eq!(providers.len(), DESKTOP_TRASH.len());
+        for provider in providers {
+            let expected = DESKTOP_TRASH
+                .iter()
+                .find(|(id, _)| *id == provider.id())
+                .map(|(_, value)| *value);
+            assert_eq!(
+                Some(provider.desktop_trash_paths()),
+                expected,
+                "{}",
+                provider.id()
+            );
+            if provider.risk() == RiskLevel::Destructive {
+                assert!(
+                    !provider.desktop_trash_paths(),
+                    "{} is destructive",
+                    provider.id()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn per_path_app_gates_name_the_owning_app() {
+        let h = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+        let browser = browser_caches::BrowserCaches::new();
+        let chrome = h.join("Library/Application Support/Google/Chrome/Default/Cache");
+        assert_eq!(browser.item_apps(&chrome), vec!["Google Chrome"]);
+        assert!(browser.item_apps(Path::new("/elsewhere")).len() > 1);
+        let caches = user_caches::UserCaches;
+        assert_eq!(
+            caches.item_apps(&h.join("Library/Caches/com.apple.Safari")),
+            vec!["Safari"]
+        );
+        assert_eq!(
+            xcode::XcodeDerivedData.item_apps(Path::new("/x")),
+            vec!["Xcode"]
+        );
+    }
+
+    #[test]
+    fn cargo_guard_is_enforced_not_just_asserted() {
+        let h = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+        let cargo = dev_caches::CargoCache;
+        assert!(cargo.check_item(&h.join(".cargo/registry/cache")).is_ok());
+        assert!(cargo.check_item(&h.join(".cargo/bin")).is_err());
+        let item = CleanItem {
+            category_id: "cargo".into(),
+            category_label: "cargo".into(),
+            path: h.join(".cargo/tiny-test-does-not-exist"),
+            size: 0,
+            risk: RiskLevel::Review,
+        };
+        // A path that does not exist, refused before any action anyway.
+        let report = cargo.execute(&[item], ExecAction::Trash).unwrap();
+        assert!(report.removed_paths.is_empty());
+        assert_eq!(report.failed.len(), 1);
     }
 
     #[test]

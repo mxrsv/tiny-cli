@@ -63,6 +63,9 @@ impl CleanProvider for ScreenshotsOld {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
+    fn desktop_trash_paths(&self) -> bool {
+        true
+    }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         let dir = match self.screenshot_dir()? {
             Some(d) => d,
