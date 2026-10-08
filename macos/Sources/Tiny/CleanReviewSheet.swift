@@ -56,7 +56,7 @@ struct CleanReviewSheet: View {
                 if let parent {
                     Text(CleanCopy.movesWith(parent)).font(.caption).foregroundStyle(.secondary)
                 } else if let excluded = clean.preview?.excluded.first(where: { $0.candidateId == candidate.id && $0.blocksReview }) {
-                    Text(CleanCopy.exclusion(excluded.reason)).font(.caption).foregroundStyle(.orange)
+                    Text(clean.exclusionText(excluded)).font(.caption).foregroundStyle(.orange)
                 }
             }
             if candidate.risk != .safe { Pill(text: "REVIEW", tint: .orange) }
@@ -82,7 +82,7 @@ struct CleanReviewSheet: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(preview.excluded.filter(\.blocksReview).prefix(Self.excludedShown), id: \.candidateId) { excluded in
-                    Label("\(excluded.path): \(CleanCopy.exclusion(excluded.reason))", systemImage: "exclamationmark.triangle")
+                    Label("\(excluded.path): \(clean.exclusionText(excluded))", systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange).lineLimit(2).truncationMode(.middle).help(excluded.path)
                 }
                 let blocked = preview.excluded.filter(\.blocksReview).count

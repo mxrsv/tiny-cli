@@ -65,15 +65,30 @@ final class CleanState {
     }
     /// Selected items with duplicates and paths inside another selected item
     /// removed, so overlaps are counted once (as Rust's preview does).
+    /// Items the current preview left out under PC-C3 are not counted either.
     var effectiveSelection: [FfiCleanCandidate] {
+        let blocked = Set(preview?.excluded.filter(\.blocksReview).map(\.candidateId) ?? [])
+        // Component order, as Rust's `partition_overlaps`, puts every descendant
+        // right after its ancestor; plain string order would put "com.x.y" first.
+        let sorted = selectedCandidates.filter { !blocked.contains($0.id) }
+            .map { (candidate: $0, components: $0.path.split(separator: "/")) }
+            .sorted { $0.components.lexicographicallyPrecedes($1.components) }
         var kept: [FfiCleanCandidate] = []
-        for candidate in selectedCandidates.sorted(by: { $0.path < $1.path }) {
-            if let last = kept.last, Self.contains(last.path, candidate.path) { continue }
-            kept.append(candidate)
+        for entry in sorted {
+            if let last = kept.last, Self.contains(last.path, entry.candidate.path) { continue }
+            kept.append(entry.candidate)
         }
         return kept
     }
     var selectedBytes: UInt64 { effectiveSelection.reduce(0) { $0.saturatingAdd($1.sizeBytes) } }
+    /// Why Rust left an item out. A blocked item whose review items cannot be
+    /// selected (report-only, failed, destructive) can only be kept.
+    func exclusionText(_ excluded: FfiPreviewExclusion) -> String {
+        guard case let .coversUnselectedReview(ids) = excluded.reason else { return CleanCopy.exclusion(excluded.reason) }
+        let selectable = Set(categories.filter(Self.isSelectable).flatMap(\.candidates).map(\.id))
+        return ids.allSatisfy(selectable.contains) ? CleanCopy.exclusion(excluded.reason) : CleanCopy.unmovableInside
+    }
+
     /// Candidate ID → path of the preview item that moves it along.
     var coveredBy: [String: String] {
         var map: [String: String] = [:]

@@ -54,6 +54,8 @@ enum CleanCopy {
             confirmLabel: "Move to Trash", isDestructive: false)
     }
 
+    static let unmovableInside = "Not moved: it contains items Tiny only reports or cannot move. Keep this folder."
+
     static func movesWith(_ parent: String) -> String {
         "Moves with \(URL(fileURLWithPath: parent).lastPathComponent). Untick that folder to keep this one."
     }
