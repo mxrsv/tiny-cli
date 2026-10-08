@@ -31,7 +31,8 @@ public enum EngineError: LocalizedError {
 
 /// Serial actor keeps blocking FFI calls off the main actor. No detached tasks or worker processes.
 public actor Engine {
-    private var session: TinySession?
+    /// One session per app: its operation gate must see every mutation.
+    private let session = TinySession()
     private var lastSample: TimeInterval = 0
     private static let minimumSampleInterval: TimeInterval = 0.25
 
@@ -55,6 +56,21 @@ public actor Engine {
         return result
     }
 
+    /// Read-only `lsof` probe followed by a sample, so it keeps the sampling spacing.
+    public func listeners() throws -> FfiListeners {
+        try Task.checkCancellation()
+        defer { lastSample = ProcessInfo.processInfo.systemUptime }
+        return try readySession().processListeners()
+    }
+
+    /// Signals one confirmed process. Runs off both the main actor and this actor:
+    /// the up to two-second settle must not stall sampling, and the session gate
+    /// (not actor order) rejects overlap with `FfiError.busy`.
+    @concurrent public nonisolated func terminate(_ target: FfiTerminateTarget,
+                                                  kind: FfiTerminateKind) async throws -> FfiTerminateOutcome {
+        try session.processTerminate(target: target, kind: kind)
+    }
+
     static func requireCurrent(_ identity: ProcessIdentity, in snapshot: FfiProcessSnapshot) throws {
         guard snapshot.processes.contains(where: { $0.identity == identity }) else {
             throw EngineError.identityChanged
@@ -68,10 +84,15 @@ public actor Engine {
         if elapsed < Self.minimumSampleInterval {
             Thread.sleep(forTimeInterval: Self.minimumSampleInterval - elapsed)
         }
-        if let session { return session }
-        let created = TinySession()
-        session = created
-        return created
+        return session
+    }
+}
+
+public extension FfiTerminateTarget {
+    /// The process exactly as the user saw it when confirming.
+    init(_ process: FfiProcessInfo) {
+        self.init(pid: process.pid, startTime: process.startTime, name: process.name,
+                  executablePath: process.executablePath)
     }
 }
 

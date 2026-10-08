@@ -7,7 +7,8 @@ struct EngineTests {
         try await wrongStartTimeIsRejected()
         try unavailableAndWarmupAreNotZero()
         try postProbeIdentityIsRevalidated()
-        print("PASS: 4 engine checks (live lifecycle, identity, unavailable/warmup, post-probe revalidation)")
+        try await terminateOwnedChild()
+        print("PASS: 5 engine checks (live lifecycle, identity, unavailable/warmup, post-probe revalidation, real terminate)")
     }
 
     private static func liveProcessLifecycleAndWarmup() async throws {
@@ -56,6 +57,43 @@ struct EngineTests {
             _ = try await engine.detail(wrong)
             throw CheckFailure(message: "reused PID identity must throw")
         } catch is EngineError { /* Expected identity mismatch. */ }
+    }
+
+    /// Signals only a child spawned here. SIGTERM is ignored and survives `exec`,
+    /// so graceful reports StillRunning, holds the gate, and force is a separate call.
+    private static func terminateOwnedChild() async throws {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sh")
+        child.arguments = ["-c", "trap '' TERM; exec /bin/sleep 30"]
+        try child.run()
+        defer { if child.isRunning { kill(child.processIdentifier, SIGKILL); child.waitUntilExit() } }
+        let engine = Engine()
+        var spawned: FfiProcessInfo?
+        for _ in 0..<20 where spawned == nil {
+            spawned = try await engine.list().processes.first { $0.pid == UInt32(child.processIdentifier) && $0.name == "sleep" }
+        }
+        guard let spawned else { throw CheckFailure(message: "owned child must appear after exec") }
+        let target = FfiTerminateTarget(spawned)
+        var reused = target
+        reused.startTime += 5
+        let changed = try await engine.terminate(reused, kind: .force)
+        try check(changed == .identityChanged, "reused PID identity is not signalled")
+        async let graceful = engine.terminate(target, kind: .graceful)
+        try await Task.sleep(for: .milliseconds(400))
+        do {
+            _ = try await engine.terminate(target, kind: .force)
+            throw CheckFailure(message: "overlapping terminate must be rejected")
+        } catch FfiError.Busy { /* The gate rejects overlap instead of queueing it. */ }
+        let first = try await graceful
+        try check(first == .stillRunning && child.isRunning, "ignored SIGTERM reported as still running")
+        let forced = try await engine.terminate(target, kind: .force)
+        try check(forced == .exited, "force quit exits")
+        child.waitUntilExit()
+        let again = try await engine.terminate(target, kind: .graceful)
+        try check(again == .alreadyExited, "exited target reported")
+        let own = FfiTerminateTarget(pid: UInt32(ProcessInfo.processInfo.processIdentifier), startTime: 0, name: "x", executablePath: nil)
+        let refused = try await engine.terminate(own, kind: .graceful)
+        try check(refused == .refused(reason: .ownProcess), "own process refused")
     }
 
     private static func postProbeIdentityIsRevalidated() throws {
