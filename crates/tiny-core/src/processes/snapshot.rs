@@ -16,6 +16,7 @@ pub struct ProcessInfo {
     pub user: Option<String>,
     #[serde(skip)]
     pub uid: Option<u32>,
+    /// Both the real and the effective UID are the current user's.
     pub is_current_user: bool,
     pub parent_pid: Option<u32>,
     /// Seconds since the Unix epoch, 1 s granularity.
@@ -70,6 +71,7 @@ pub(crate) struct RawProcess {
     pub pid: u32,
     pub name: String,
     pub uid: Option<u32>,
+    pub effective_uid: Option<u32>,
     pub user: Option<String>,
     pub parent_pid: Option<u32>,
     pub start_time: u64,
@@ -84,6 +86,7 @@ pub(crate) fn raw_process(process: &sysinfo::Process, user: Option<String>) -> R
         name: process.name().to_string_lossy().into_owned(),
         user,
         uid: process.user_id().map(|uid| **uid),
+        effective_uid: process.effective_user_id().map(|uid| **uid),
         parent_pid: process.parent().map(|pid| pid.as_u32()),
         start_time: process.start_time(),
         cpu: process.cpu_usage(),
@@ -102,7 +105,8 @@ pub(crate) fn to_info(raw: RawProcess, cpu_measured: bool, current_uid: u32) -> 
         pid: raw.pid,
         name: raw.name,
         user: raw.user,
-        is_current_user: raw.uid == Some(current_uid),
+        // A setuid process (ruid = me, euid = root) is not the current user's.
+        is_current_user: raw.uid == Some(current_uid) && raw.effective_uid == Some(current_uid),
         uid: raw.uid,
         parent_pid: raw.parent_pid,
         start_time: raw.start_time,
@@ -256,6 +260,7 @@ mod tests {
             pid: 42,
             name: "sample".into(),
             uid: Some(uid),
+            effective_uid: Some(uid),
             user: Some("me".into()),
             parent_pid: Some(1),
             start_time: 1_700_000_000,
@@ -368,6 +373,16 @@ mod tests {
         assert_eq!(info.cpu_percent, None);
         assert!(!info.cpu_measured);
         assert!(!info.is_current_user);
+    }
+
+    #[test]
+    fn setuid_process_is_not_the_current_users() {
+        let mut setuid = raw(4096, 501);
+        setuid.effective_uid = Some(0);
+        assert!(!to_info(setuid, true, 501).is_current_user);
+        let mut unknown = raw(4096, 501);
+        unknown.effective_uid = None;
+        assert!(!to_info(unknown, true, 501).is_current_user);
     }
 
     #[test]
