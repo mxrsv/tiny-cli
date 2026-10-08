@@ -131,10 +131,26 @@ final class CleanState {
 
     // MARK: Selection
 
+    enum CheckState: Equatable { case off, mixed, on }
+
+    static func checkState(_ category: FfiCleanCategory, selection: Set<String>) -> CheckState {
+        let selected = category.candidates.filter { selection.contains($0.id) }.count
+        return selected == 0 ? .off : selected == category.candidates.count ? .on : .mixed
+    }
+
+    /// Any selected item clears the category. Otherwise a safe category adds only
+    /// its safe items that carry no review item; review items are ticked one by
+    /// one, or by clicking a review category.
     func toggle(category id: String) {
         guard phase == .ready, let category = categories.first(where: { $0.id == id }), Self.isSelectable(category) else { return }
         let ids = Set(category.candidates.map(\.id))
-        selection = ids.isSubset(of: selection) ? selection.subtracting(ids) : selection.union(ids)
+        if !ids.isDisjoint(with: selection) {
+            selection.subtract(ids)
+        } else if category.risk == .safe, let discovery {
+            selection.formUnion(Self.preselected(discovery).intersection(ids))
+        } else {
+            selection.formUnion(ids)
+        }
         invalidatePreview()
     }
 

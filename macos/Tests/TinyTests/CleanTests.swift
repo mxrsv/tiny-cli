@@ -34,6 +34,25 @@ import TinyEngine
         try check(!clean.selection.contains("review-2"), "per-path exclusion")
         try check(!CleanState.isSelectable(category("report", desktop: .reportOnly(reason: .notPerPathTrash))), "report-only rule")
         try await untickedChildMovesWithTickedParent()
+        try await categoryCheckboxIsTriState()
+    }
+
+    /// M2: mixed state; a click clears any selection, and a safe category never adds review items.
+    private static func categoryCheckboxIsTriState() async throws {
+        let (clean, _, _, cleanup) = make()
+        defer { cleanup() }
+        await clean.scan()?.value
+        let state = { (id: String) in CleanState.checkState(clean.categories.first { $0.id == id }!, selection: clean.selection) }
+        try check(state("safe") == .mixed && state("review") == .off, "preselected safe category is mixed")
+        clean.toggle(category: "safe")
+        try check(state("safe") == .off && !clean.selection.contains("safe-1"), "clicking a category with any selection clears it")
+        clean.toggle(category: "safe")
+        try check(clean.selection == ["safe-1"], "a safe category adds only safe items that carry no review item")
+        clean.toggle(candidate: "safe-review")
+        clean.toggle(candidate: "safe-parent")
+        try check(state("safe") == .on, "ticking the rest one by one makes it on")
+        clean.toggle(category: "review")
+        try check(state("review") == .on, "a review category selects its review items when clicked")
     }
 
     /// M1: a child under a ticked parent cannot be kept by unticking it; counts are deduplicated.

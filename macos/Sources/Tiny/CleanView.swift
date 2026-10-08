@@ -116,9 +116,13 @@ struct CleanTile: View {
                 }
                 Spacer(minLength: 4)
                 if selectable {
-                    Toggle("Select \(category.label)", isOn: Binding(
-                        get: { selected == category.candidates.count }, set: { _ in clean.toggle(category: category.id) }))
-                        .toggleStyle(.checkbox).labelsHidden()
+                    let check = CleanState.checkState(category, selection: clean.selection)
+                    // Two sources render off/mixed/on; only the first acts, once per click.
+                    Toggle("Select \(category.label)", sources: [
+                        Binding(get: { check != .off }, set: { _ in clean.toggle(category: category.id) }),
+                        Binding(get: { check == .on }, set: { _ in })
+                    ], isOn: \.self)
+                    .toggleStyle(.checkbox).labelsHidden()
                 }
             }
             Text(category.status == .found ? CleanCopy.size(category) : "—").font(Theme.number(24))
