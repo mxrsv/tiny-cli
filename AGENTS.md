@@ -22,10 +22,22 @@ The existing Tauri source remains a separate reference surface.
   and a static archive. Never edit generated files or enable `test-hooks` in the app.
 - The [Swift engine actor](macos/Sources/TinyEngine/Engine.swift) serializes process
   sampling off the main actor. Keep PID/start-time identity through list and detail.
-- The current [native interface](macos/Sources/Tiny/ProcessesView.swift) is read-only;
-  process termination and cleanup integration are deferred. Whole-machine usage
-  comes from the [system sampler](crates/tiny-core/src/processes/snapshot.rs), never
-  summed app/process values.
+- Whole-machine usage comes from the [system sampler](crates/tiny-core/src/processes/snapshot.rs),
+  never summed app/process values.
+- App-row Quit is the one Swift-owned action ([AppQuit](macos/Sources/Tiny/AppQuit.swift),
+  `NSRunningApplication.terminate()`); it is gated by the Rust `refusal` on
+  `FfiProcessInfo`. Per-PID Quit/Force Quit and Move to Trash go through Rust and its
+  session gate (`Busy`).
+- Every Swift-side mutation claims the single [ActionState](macos/Sources/Tiny/ProcessActions.swift)
+  guard and writes a per-operation [in-flight marker](macos/Sources/Tiny/InFlightMarker.swift)
+  before acting; nothing is replayed at launch.
+- Harness checks, snapshots and smoke flags never call the real `cleanExecute` (it
+  moves real files through Finder); use `FakeCleanEngine`. Real `cleanDiscover` and
+  `cleanPreview` are read-only. PC-C3 (review items are never moved unless explicitly
+  selected) is enforced in [the FFI preview](crates/tiny-ffi/src/clean.rs) and in Swift.
+- [build-native-app.sh](scripts/build-native-app.sh) adds `NSAppleEventsUsageDescription`
+  and fails if smoke or debug hooks reach the default bundle; `--smoke-hooks` builds
+  the O1 test flag. Hardened runtime is off, so no apple-events entitlement exists.
 - [App groups](macos/Sources/Tiny/AppGroups.swift) use bundle paths and conservative
   same-owner ancestry. [AppCatalog](macos/Sources/Tiny/AppCatalog.swift) owns local
   icons/metadata; nested helper metadata must not replace an outer app's identity.

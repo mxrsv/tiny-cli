@@ -1,8 +1,9 @@
 # tiny-cli
 
 A local macOS desktop app and Rust CLI for everyday performance and productivity.
-The [native SwiftUI development app](macos/Sources/Tiny/TinyApp.swift) reads local
-processes through the shared Rust engine. The earlier Tauri 2 + React 19 desktop
+The [native SwiftUI development app](macos/Sources/Tiny/TinyApp.swift) inspects and
+quits local processes and moves cleanup candidates to the Trash through the shared
+Rust engine. The earlier Tauri 2 + React 19 desktop
 remains a separate reference surface. All filesystem operations stay on your machine.
 
 ## Goals
@@ -48,8 +49,31 @@ Search matches app names or member name/PID/owner; sort uses app CPU, resident
 memory or name. Select an app, then a member in the
 [inspector](macos/Sources/Tiny/ProcessDetailView.swift), to see its parent,
 children and listening TCP ports. Automatic refresh runs every two seconds;
-pause and manual refresh remain available. This slice is read-only: it has no
-process termination, cleanup or permission-changing controls.
+pause and manual refresh remain available.
+
+Selecting an app offers Quit, a native request like ⌘Q that is never escalated, plus
+Reveal in Finder and Copy Path. Selecting a member process offers Quit, Force Quit…,
+Reveal executable and Copy PID; row context menus offer the same items. Every Quit
+and Force Quit asks first in a [native alert](macos/Sources/Tiny/ConfirmationAlert.swift)
+naming the target and consequence, with Cancel as the default; Force Quit is confirmed
+separately. Rust revalidates PID, start time, name and executable before signalling
+and refuses Tiny itself, its parent, PID 0/1, other users' and protected system
+processes. The [Ports tile](macos/Sources/Tiny/PortsTile.swift) lists the current
+user's visible TCP listeners and their owners; without root, other users' sockets
+are invisible, so an empty list never means a port is free.
+
+The **Clean** destination in the dock scans cleanup categories read-only and shows
+them as tiles: green is safe, orange needs review and is never selected for you, and
+report-only categories (Docker prune, Time Machine snapshots, Trash, orphaned
+Application Support folders) stay in the CLI. **Review…** lists every path, asks Rust
+for a preview that expires after 15 minutes, and refuses a folder that would carry an
+unselected review item. **Move to Trash** asks for confirmation, then moves each item
+through Finder so Put Back works, revalidating it immediately before the move, and
+reports moved, failed, skipped and not-attempted items. Moved bytes are not freed
+space until the Trash is emptied. The first move asks to let Tiny Dev control Finder;
+if that is denied, nothing is deleted and the report explains how to allow it.
+If Tiny stops mid-action, the next launch shows an unknown-outcome notice;
+nothing is ever retried automatically.
 
 The [engine](macos/Sources/TinyEngine/Engine.swift) preserves unavailable values
 and spaces samples for CPU warm-up. Other-user/system processes may not expose
@@ -66,6 +90,13 @@ scripts/test-native.sh
 "macos/.build/Tiny Dev.app/Contents/MacOS/Tiny" --smoke-test
 "macos/.build/Tiny Dev.app/Contents/MacOS/Tiny" --snapshot /tmp/tiny-processes.png
 ```
+
+Snapshot scenes are selected with an optional argument after the path: `member`,
+`app`, `notice`, `minimum`, `clean`, `clean-all`, `review`, `review-fixture` or
+`report`. They stage a selection or sample data and never confirm or execute an
+action. `scripts/build-native-app.sh --smoke-hooks` additionally compiles
+`--quit-test-app /tmp/Name.app`, which launches that disposable app and quits only the
+instance it launched; the default build excludes it.
 
 [Native checks](scripts/test-native.sh) compile the actual state/engine sources
 with stdlib-only checks; CLT-only installations lack XCTest and Swift Testing,
@@ -195,6 +226,27 @@ Options:
 
 - `--min-size-mb` (default `100`): report files at or above this size.
 - `--older-than-days` (default `90`): report files older than this many days.
+
+### `processes` — list, inspect and quit your processes
+
+```bash
+tiny processes                          # top 20 by CPU
+tiny processes --sort memory --limit 50
+tiny processes --port 3000              # visible owners of a listening TCP port
+tiny processes show 4321 --json         # parent, children and listening ports
+tiny processes quit 4321                # SIGTERM after a confirmation prompt
+tiny processes quit 4321 --force        # SIGKILL, confirmed separately
+TINY_CONFIRM_FORCE=1 tiny processes quit 4321 --force -y   # non-interactive SIGKILL
+```
+
+`--json` emits camelCase fields; CPU that has not been measured yet is `null`,
+never `0`. `quit` revalidates the PID's start time, name and owner immediately
+before signalling, sends exactly one signal, never escalates to SIGKILL and never
+signals a process tree. It refuses `tiny` itself, its parent, PID 0/1, other users'
+processes and protected system processes (`WindowServer`, `loginwindow`, `Dock`,
+`SystemUIServer`, `Finder`), and exits non-zero unless the process actually exited.
+`--port` lists only owners visible to the current user: without root, other users'
+sockets are invisible, so no owner does not mean the port is free.
 
 ### `clean` — interactive cleanup of caches and recoverable data (macOS)
 
