@@ -20,7 +20,7 @@ struct CleanReviewSheet: View {
                     }
                 }
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
+            .listStyle(.inset)
             .frame(minHeight: 220)
             previewSection
             HStack {
@@ -55,6 +55,8 @@ struct CleanReviewSheet: View {
                     .help(candidate.path)
                 if let parent {
                     Text(CleanCopy.movesWith(parent)).font(.caption).foregroundStyle(.secondary)
+                } else if let excluded = clean.preview?.excluded.first(where: { $0.candidateId == candidate.id && $0.blocksReview }) {
+                    Text(CleanCopy.exclusion(excluded.reason)).font(.caption).foregroundStyle(.orange)
                 }
             }
             if candidate.risk != .safe { Pill(text: "REVIEW", tint: .orange) }

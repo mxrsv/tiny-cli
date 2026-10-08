@@ -33,7 +33,7 @@ struct TinyNativeApp: App {
                 TinyNativeApp.main()
             } else {
                 throw NSError(domain: "Tiny", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                    "Usage: Tiny [--smoke-test | --snapshot /absolute/path.png [member|app|notice|minimum|clean|clean-all|review|report]]"])
+                    "Usage: Tiny [--smoke-test | --snapshot /absolute/path.png [member|app|notice|minimum|clean|clean-all|review|review-fixture|report]]"])
             }
         } catch {
             FileHandle.standardError.write(Data("Tiny: \(error.localizedDescription)\n".utf8))

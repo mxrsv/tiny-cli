@@ -6,13 +6,26 @@ import TinyEngine
 /// Recording. Scenes only select, scan (read-only) or preview; nothing is
 /// confirmed or executed, and the marker directory is throwaway.
 extension Main {
-    enum SnapshotScene: String { case member, app, notice, minimum, clean, cleanAll = "clean-all", review, report }
+    enum SnapshotScene: String { case member, app, notice, minimum, clean, cleanAll = "clean-all", review, reviewFixture = "review-fixture", report }
 
     @MainActor static func snapshot(to url: URL, scene: SnapshotScene) async throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let markers = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-snapshot-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: markers) }
         if scene == .notice { try InFlightMarker(directory: markers).begin(UUID(), summary: "Force Quit “sleep” (PID 4242)") }
+        if scene == .reviewFixture {
+            let actions = ActionState(terminate: { _, _ in .alreadyExited }, quitApp: { _ in .alreadyExited },
+                                      marker: InFlightMarker(directory: markers))
+            let clean = CleanState(engine: DisplayCleanEngine(), actions: actions)
+            await clean.scan()?.value
+            clean.toggle(candidate: "jetbrains")
+            clean.toggle(candidate: "b-ips")
+            await clean.requestPreview()?.value
+            try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
+                             size: NSSize(width: 680, height: 600), to: url)
+            print("Rendered the review sheet with fixture data to \(url.path)")
+            return
+        }
         if scene == .report {
             try await render(CleanReportView(report: sampleReport()).padding(26).background(Backdrop()),
                              size: NSSize(width: 1188, height: 1180), to: url)
@@ -64,6 +77,14 @@ extension Main {
             print("Rendered \(state.clean.categories.count) cleanup categories to \(url.path)")
             return
         }
+        // Stage, never run: tick a safe folder that holds a review item, if real data has one,
+        // so the sheet shows Rust's PC-C3 exclusion next to "moves with" rows.
+        let all = state.clean.categories.filter(CleanState.isSelectable).flatMap(\.candidates)
+        if let carrier = all.first(where: { item in
+            item.risk == .safe && all.contains { $0.risk != .safe && $0.id != item.id && CleanState.contains(item.path, $0.path) }
+        }) {
+            state.clean.toggle(candidate: carrier.id)
+        }
         await state.clean.requestPreview()?.value
         try await render(CleanReviewSheet(clean: state.clean, actions: state.actions).background(Theme.tile),
                          size: NSSize(width: 680, height: 600), to: url)
@@ -104,5 +125,54 @@ extension Main {
         }
         return FfiExecReport(results: results, bytesSelected: 4_320_000_000, bytesMovedToTrash: 360_000_000, movedCount: 2,
                              failedCount: 2, skippedCount: 3, notAttemptedCount: 1, stopped: .automationDenied)
+    }
+}
+
+/// Display-only data for the `review-fixture` scene: a folder that moves with its
+/// parent, and a folder Rust leaves out because it holds an unselected review item.
+/// It never executes anything.
+private struct DisplayCleanEngine: CleanEngine {
+    private static let logs = "/Users/you/Library/Logs"
+
+    func cleanDiscover(_ options: FfiCleanOptions, token: CancellationToken,
+                       progress: any ProgressListener) async throws -> FfiDiscovery {
+        func item(_ id: String, _ path: String, _ size: UInt64, _ risk: FfiRisk = .safe) -> FfiCleanCandidate {
+            FfiCleanCandidate(id: id, path: "\(Self.logs)/\(path)", sizeBytes: size, unreadableEntries: 0, risk: risk)
+        }
+        func category(_ id: String, _ label: String, _ risk: FfiRisk, _ items: [FfiCleanCandidate]) -> FfiCleanCategory {
+            FfiCleanCategory(id: id, label: label, inclusionReason: "Sample", family: "user-storage", risk: risk, status: .found,
+                             desktopAction: .moveToTrash, candidates: items, totalBytes: items.reduce(0) { $0 + $1.sizeBytes },
+                             unreadable: [], refused: [])
+        }
+        return FfiDiscovery(discoveryId: "sample", categories: [
+            category("user-logs", "User logs", .safe, [item("jetbrains", "JetBrains", 120_000_000),
+                                                       item("diagnostic", "DiagnosticReports", 40_000_000),
+                                                       item("claude", "Claude", 41_600_000)]),
+            category("crash-reports", "Crash reports", .safe, [item("a-ips", "DiagnosticReports/a.ips", 20_000_000),
+                                                               item("b-ips", "DiagnosticReports/b.ips", 20_000_000)]),
+            category("jetbrains-logs", "JetBrains logs", .review, [item("idea", "JetBrains/IntelliJIdea2026.2", 120_000_000, .review)])])
+    }
+
+    func cleanPreview(_ candidateIds: [String]) async throws -> FfiPreview {
+        let diagnostic = "\(Self.logs)/DiagnosticReports"
+        func covered(_ id: String, _ name: String, _ selected: Bool) -> FfiCoveredCandidate {
+            FfiCoveredCandidate(candidateId: id, path: "\(diagnostic)/\(name)", risk: .safe, selected: selected)
+        }
+        return FfiPreview(previewId: "sample", items: [
+            FfiPreviewItem(candidateId: "claude", categoryId: "user-logs", path: "\(Self.logs)/Claude", sizeBytes: 41_600_000,
+                           risk: .safe, covers: []),
+            FfiPreviewItem(candidateId: "diagnostic", categoryId: "user-logs", path: diagnostic, sizeBytes: 40_000_000,
+                           risk: .safe, covers: [covered("a-ips", "a.ips", true), covered("b-ips", "b.ips", false)])],
+            excluded: [
+                FfiPreviewExclusion(candidateId: "jetbrains", path: "\(Self.logs)/JetBrains",
+                                    reason: .coversUnselectedReview(candidateIds: ["idea"])),
+                FfiPreviewExclusion(candidateId: "a-ips", path: "\(diagnostic)/a.ips",
+                                    reason: .insideSelected(parentCandidateId: "diagnostic"))],
+            bytesSelected: 81_600_000, expiresInSeconds: 900)
+    }
+
+    func cleanExecute(_ previewId: String, token: CancellationToken,
+                      progress: any ProgressListener) async throws -> FfiExecReport {
+        throw FfiError.Unsupported(detail: "the snapshot engine never moves anything")
     }
 }
