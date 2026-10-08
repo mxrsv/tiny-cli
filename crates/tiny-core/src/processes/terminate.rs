@@ -201,7 +201,8 @@ fn settle(target: &TerminateTarget) -> TerminateOutcome {
 }
 
 /// Fresh lookup of one PID in its own `System`, so a shared `Sampler`'s CPU
-/// baseline is untouched. A zombie has exited and counts as gone.
+/// baseline is untouched. A zombie has exited and counts as gone. A process
+/// whose effective UID differs (for example `sudo`) is not the current user's.
 fn probe(pid: u32) -> Option<ProcessInfo> {
     let pid = Pid::from_u32(pid);
     let mut system = System::new();
@@ -217,7 +218,10 @@ fn probe(pid: u32) -> Option<ProcessInfo> {
         .filter(|process| process.status() != ProcessStatus::Zombie)?;
     // SAFETY: getuid has no preconditions and cannot fail.
     let current_uid = unsafe { libc::getuid() };
-    Some(to_info(raw_process(process, None), false, current_uid))
+    let effective_uid = process.effective_user_id().map(|uid| **uid);
+    let mut info = to_info(raw_process(process, None), false, current_uid);
+    info.is_current_user &= effective_uid == Some(current_uid);
+    Some(info)
 }
 
 #[cfg(test)]
