@@ -1,15 +1,19 @@
-//! Read-only process inspection shared by the CLI and the native app.
+//! Process inspection and actions shared by the CLI and the native app.
 
 pub mod ports;
 pub mod snapshot;
+pub mod terminate;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::runner::CommandRunner;
 
-pub use ports::ListeningPort;
+pub use ports::{port_owners, ListeningPort, PortOwner, PortOwners, PORT_VISIBILITY_CAVEAT};
 pub use snapshot::{ProcessInfo, ProcessSnapshot, Sampler};
+pub use terminate::{
+    refusal, terminate, Refusal, TerminateKind, TerminateOutcome, TerminateTarget,
+};
 
 /// Diagnostic used when ports are not probed for another user's process: a
 /// non-root `lsof` would silently report nothing for it.
@@ -51,6 +55,7 @@ pub enum ParentState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessDetail {
+    #[serde(flatten)]
     pub process: ProcessInfo,
     pub parent: ParentState,
     pub children: Vec<ProcessInfo>,

@@ -78,6 +78,20 @@ pub(crate) struct RawProcess {
     pub exe: Option<PathBuf>,
 }
 
+pub(crate) fn raw_process(process: &sysinfo::Process, user: Option<String>) -> RawProcess {
+    RawProcess {
+        pid: process.pid().as_u32(),
+        name: process.name().to_string_lossy().into_owned(),
+        user,
+        uid: process.user_id().map(|uid| **uid),
+        parent_pid: process.parent().map(|pid| pid.as_u32()),
+        start_time: process.start_time(),
+        cpu: process.cpu_usage(),
+        memory: process.memory(),
+        exe: process.exe().map(PathBuf::from),
+    }
+}
+
 /// Applies the availability rules. A live process never has zero resident
 /// memory, so `memory == 0` means macOS denied task info (another user's
 /// process); CPU from the same call is then unavailable too.
@@ -199,21 +213,11 @@ impl Sampler {
             .processes()
             .values()
             .map(|process| {
-                let uid = process.user_id().map(|uid| **uid);
-                let raw = RawProcess {
-                    pid: process.pid().as_u32(),
-                    name: process.name().to_string_lossy().into_owned(),
-                    user: process
-                        .user_id()
-                        .and_then(|uid| self.users.get_user_by_id(uid))
-                        .map(|user| user.name().to_string()),
-                    uid,
-                    parent_pid: process.parent().map(|pid| pid.as_u32()),
-                    start_time: process.start_time(),
-                    cpu: process.cpu_usage(),
-                    memory: process.memory(),
-                    exe: process.exe().map(PathBuf::from),
-                };
+                let user = process
+                    .user_id()
+                    .and_then(|uid| self.users.get_user_by_id(uid))
+                    .map(|user| user.name().to_string());
+                let raw = raw_process(process, user);
                 let seen = self.seen.get(&raw.pid).map_or(0, |&(_, count)| count);
                 to_info(raw, seen >= REFRESHES_FOR_CPU, self.current_uid)
             })
