@@ -48,7 +48,8 @@ final class CleanState {
     private(set) var operation: UUID?
     @ObservationIgnored private var token: CancellationToken?
     @ObservationIgnored private let engine: any CleanEngine
-    @ObservationIgnored private let actions: ActionState
+    /// Shared guard and notices for every tracked mutation.
+    @ObservationIgnored let actions: ActionState
     @ObservationIgnored private let now: () -> Date
 
     init(engine: any CleanEngine, actions: ActionState, now: @escaping () -> Date = Date.init) {
@@ -194,6 +195,7 @@ final class CleanState {
 
     /// Opens the final confirmation for the current preview, or explains why not.
     func requestMove() -> ConfirmationCopy? {
+        guard !actions.isRunning else { error = CleanError(message: ActionCopy.busy.text, needsRescan: false); return nil }
         guard let preview, !preview.items.isEmpty, !isBusy else { return nil }
         if let expires = previewExpiresAt, now() >= expires {
             requireRescan(CleanCopy.expired)
@@ -216,12 +218,22 @@ final class CleanState {
         return execute(preview)
     }
 
+    /// No window could show the confirmation: nothing runs, and the sheet says why.
+    func confirmationUnavailable(_ previewId: String) {
+        if pendingConfirmation == previewId { pendingConfirmation = nil }
+        error = CleanError(message: ActionCopy.confirmationUnavailable.text, needsRescan: false)
+    }
+
     // MARK: Execute
 
     private func execute(_ preview: FfiPreview) -> Task<Void, Never>? {
         let summary = "Move \(CleanCopy.items(preview.items.count)) (\(CleanCopy.bytes(preview.bytesSelected))) to Trash"
         let marker = UUID()
-        guard actions.beginTracked(marker, summary: summary) else { return nil }
+        guard actions.beginTracked(marker, summary: summary) else {
+            // Shown in the sheet too; the shared notice sits behind it.
+            error = CleanError(message: actions.notice?.text ?? ActionCopy.busy.text, needsRescan: false)
+            return nil
+        }
         let id = start(.executing)
         reviewing = false
         // The preview is consumed by this call whatever happens; never offer it again.

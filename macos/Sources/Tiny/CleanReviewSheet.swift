@@ -113,8 +113,7 @@ struct CleanReviewSheet: View {
     private func confirm() {
         guard let copy = clean.requestMove(), let previewId = clean.pendingConfirmation else { return }
         guard let window = ConfirmationAlert.hostWindow() else {
-            clean.finishConfirmation(false, previewId: previewId)
-            actions.post(ActionCopy.confirmationUnavailable)
+            clean.confirmationUnavailable(previewId)
             return
         }
         ConfirmationAlert.present(copy, on: window) { response in

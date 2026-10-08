@@ -16,7 +16,7 @@ import TinyEngine
             try AppGroupTests.run()
             try await ActionTests.run()
             try await CleanTests.run()
-            print("PASS: 32 total native checks")
+            print("PASS: 33 total native checks")
         } catch {
             FileHandle.standardError.write(Data("FAIL: \(error)\n".utf8))
             exit(1)

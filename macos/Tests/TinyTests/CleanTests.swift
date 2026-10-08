@@ -9,10 +9,11 @@ import TinyEngine
         try reportMapping()
         try await errorStatesRequireRescan()
         try await previewErrorsShowAndDoNotRepeat()
+        try await executeRefusalsShowInSheet()
         try await markerAroundExecute()
         try await progressOwnership()
         try await realDiscoveryIsReadOnlyAndScoped()
-        print("PASS: 8 clean checks (selection, confirm/execute once, report, errors, preview errors, marker, progress, real discovery)")
+        print("PASS: 9 clean checks (selection, confirm/execute once, report, errors, preview errors, refusals, marker, progress, real discovery)")
     }
 
     private static func selectionRules() async throws {
@@ -159,6 +160,29 @@ import TinyEngine
         try check(clean.error == nil && clean.canUpdatePreview, "changing the selection clears it and allows a new preview")
         try check(CleanCopy.error(CocoaError(.featureUnsupported), during: .preview).message.hasPrefix("Preview failed"),
                   "an unexpected preview error does not say scan")
+    }
+
+    /// M4: refusals to start show in the sheet and execute nothing.
+    private static func executeRefusalsShowInSheet() async throws {
+        let (clean, engine, _, cleanup) = make()
+        defer { cleanup() }
+        await clean.scan()?.value
+        await clean.requestPreview()?.value
+        guard let preview = clean.preview else { throw CheckFailure(message: "preview") }
+        let quit = UUID()
+        _ = clean.actions.beginTracked(quit, summary: "Quit “sleep” (PID 7)")
+        try check(clean.requestMove() == nil && clean.error?.message == ActionCopy.busy.text, "requestMove checks the shared guard first")
+        clean.actions.endTracked(quit)
+        _ = clean.requestMove()
+        _ = clean.actions.beginTracked(quit, summary: "Quit “sleep” (PID 7)")
+        try check(clean.finishConfirmation(true, previewId: preview.previewId) == nil && clean.error != nil, "busy guard at execute shows in the sheet")
+        clean.actions.endTracked(quit)
+        _ = clean.requestMove()
+        clean.confirmationUnavailable(preview.previewId)
+        try check(clean.error?.message == ActionCopy.confirmationUnavailable.text && clean.pendingConfirmation == nil,
+                  "no window for the confirmation is shown in the sheet")
+        let executed = await engine.executed
+        try check(executed.isEmpty, "nothing executed")
     }
 
     private static func markerAroundExecute() async throws {
