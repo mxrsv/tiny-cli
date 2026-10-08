@@ -71,6 +71,24 @@ public actor Engine {
         try session.processTerminate(target: target, kind: kind)
     }
 
+    /// Read-only cleanup scan. Off this actor so process sampling continues;
+    /// it takes the session gate, so an overlapping mutation gets `busy`.
+    @concurrent public nonisolated func cleanDiscover(_ options: FfiCleanOptions, token: CancellationToken,
+                                                      progress: any ProgressListener) async throws -> FfiDiscovery {
+        try session.cleanDiscover(options: options, token: token, progress: progress)
+    }
+
+    /// Builds the trusted preview from discovered candidate IDs. No gate.
+    @concurrent public nonisolated func cleanPreview(_ candidateIds: [String]) async throws -> FfiPreview {
+        try session.cleanPreview(candidateIds: candidateIds)
+    }
+
+    /// Moves a confirmed preview's items to the Trash through Finder. Takes the gate.
+    @concurrent public nonisolated func cleanExecute(_ previewId: String, token: CancellationToken,
+                                                     progress: any ProgressListener) async throws -> FfiExecReport {
+        try session.cleanExecute(previewId: previewId, token: token, progress: progress)
+    }
+
     static func requireCurrent(_ identity: ProcessIdentity, in snapshot: FfiProcessSnapshot) throws {
         guard snapshot.processes.contains(where: { $0.identity == identity }) else {
             throw EngineError.identityChanged
