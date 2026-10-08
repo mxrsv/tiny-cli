@@ -30,6 +30,9 @@ enum ActionCopy {
     static let busy = ActionNotice(tone: .warning,
         text: "Another operation is running. Nothing was sent; try again when it finishes.")
 
+    static let confirmationUnavailable = ActionNotice(tone: .failure,
+        text: "Couldn't show the confirmation; nothing was sent.")
+
     static func label(_ process: FfiProcessInfo) -> String { "“\(process.name)” (PID \(process.pid))" }
 
     static func request(_ process: FfiProcessInfo, kind: FfiTerminateKind) -> ActionRequest {
@@ -172,6 +175,12 @@ final class ActionState {
     func request(app: AppQuitTarget) { open(ActionCopy.request(app: app)) }
 
     func cancel() { pending = nil }
+
+    /// The confirmation sheet could not be shown, so the request is dropped visibly.
+    func confirmationUnavailable() {
+        pending = nil
+        notice = ActionCopy.confirmationUnavailable
+    }
 
     func dismissNotice() {
         notice = nil

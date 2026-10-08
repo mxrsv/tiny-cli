@@ -129,28 +129,30 @@ import TinyEngine
         unwritable.request(process(11), kind: .graceful)
         try check(unwritable.pending.flatMap { unwritable.confirm($0) } == nil && recorder.calls.count == before
                   && unwritable.notice?.tone == .failure && !unwritable.isRunning, "no durable marker, nothing sent")
-        try markerSurvivesAbort()
+        try markerSurvivesKill()
     }
 
-    /// A child writes a marker and then aborts; the parent must still find it.
-    private static func markerSurvivesAbort() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-abort-\(UUID().uuidString)")
+    /// A child writes a marker and is then killed; the parent must still find it.
+    private static func markerSurvivesKill() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-kill-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let child = Process()
         child.executableURL = Bundle.main.executableURL
-        child.arguments = [markerAbortFlag, directory.path]
+        child.arguments = [markerKillFlag, directory.path]
         try child.run()
         child.waitUntilExit()
-        try check(child.terminationReason == .uncaughtSignal && child.terminationStatus == SIGABRT, "child aborted")
-        try check(InFlightMarker(directory: directory).pending.map(\.summary) == ["abort test"], "marker survives abort()")
+        try check(child.terminationReason == .uncaughtSignal && child.terminationStatus == SIGKILL, "child killed")
+        try check(InFlightMarker(directory: directory).pending.map(\.summary) == ["kill test"], "marker survives SIGKILL")
     }
 
-    static let markerAbortFlag = "--marker-then-abort"
+    static let markerKillFlag = "--marker-then-kill"
 
-    /// Child side of `markerSurvivesAbort`.
-    static func markerThenAbort(_ path: String) -> Never {
-        do { try InFlightMarker(directory: URL(fileURLWithPath: path)).begin(UUID(), summary: "abort test") } catch { exit(2) }
-        abort()
+    /// Child side of `markerSurvivesKill`.
+    static func markerThenKill(_ path: String) -> Never {
+        do { try InFlightMarker(directory: URL(fileURLWithPath: path)).begin(UUID(), summary: "kill test") } catch { exit(2) }
+        // Termination without cleanup, and no crash report left behind.
+        kill(getpid(), SIGKILL)
+        exit(3)
     }
 
     private static func listenersStates() throws {
@@ -247,6 +249,10 @@ import TinyEngine
         await ConfirmationAlert.finish(.alertSecondButtonReturn, request: again, actions: actions)?.value
         await ConfirmationAlert.finish(.alertSecondButtonReturn, request: again, actions: actions)?.value
         try check(recorder.calls.map(\.1) == [.force], "action response runs exactly once")
+        actions.request(row, kind: .graceful)
+        actions.confirmationUnavailable()
+        try check(actions.pending == nil && actions.notice == ActionCopy.confirmationUnavailable
+                  && recorder.calls.count == 1, "no window for the sheet: failure notice, nothing sent")
     }
 
     private static func makeActions(_ recorder: Recorder) -> (ActionState, InFlightMarker, () -> Void) {

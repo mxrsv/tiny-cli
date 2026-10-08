@@ -34,7 +34,7 @@ struct ProcessesView: View {
         .onChange(of: state.actions.pending?.id) { _, id in
             guard id != nil, let request = state.actions.pending else { return }
             guard let window = NSApp.keyWindow ?? NSApp.mainWindow, window.attachedSheet == nil else {
-                state.actions.cancel()
+                state.actions.confirmationUnavailable()
                 return
             }
             ConfirmationAlert.present(request, on: window, actions: state.actions)
