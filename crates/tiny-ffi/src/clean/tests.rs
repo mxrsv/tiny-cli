@@ -53,6 +53,10 @@ impl CleanProvider for Fixture {
         self.app
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> CoreResult<Vec<CleanItem>> {
+        // Extras are category-rooted items, like `root_as_item`.
+        for extra in &self.extra {
+            ctx.add_root(extra);
+        }
         let paths = list_children(&self.root, ctx)
             .into_iter()
             .chain(self.extra.iter().cloned());
@@ -399,6 +403,92 @@ fn failing_and_app_gated_categories_are_reported_beside_healthy_ones() {
 }
 
 // ---------- execution (T4c) ----------
+
+/// Runs discover → preview(all) → execute for `providers` with Spotify running.
+fn execute_with_spotify_running(
+    providers: impl Fn() -> Vec<Box<dyn CleanProvider>>,
+) -> FfiExecReport {
+    struct SpotifyRunning;
+    impl AppProbe for SpotifyRunning {
+        fn probe(&self, name: &str) -> std::result::Result<bool, String> {
+            Ok(name == "Spotify")
+        }
+    }
+    let session = TinySession::new();
+    let discovery = discover(&session, &providers()).unwrap();
+    let preview = session.clean_preview(ids(&discovery)).unwrap();
+    assert_eq!(preview.items.len(), 1, "{:?}", preview.items);
+    let factory = |_: &CleanOptions| providers();
+    session
+        .execute_clean(
+            &preview.preview_id,
+            &factory,
+            &SpotifyRunning,
+            &FakeTrash::default(),
+            &CancellationToken::default(),
+            &Progress::default(),
+        )
+        .unwrap()
+}
+
+#[test]
+fn a_duplicate_keeps_the_app_gate_of_either_category_in_any_order() {
+    let dir = fixture_dir("spotify-dup", &[], 0);
+    std::fs::create_dir(dir.join("com.spotify.client")).unwrap();
+    // user-caches lists the folder; streaming-caches finds it gated on Spotify.
+    let gated = |root: &Path| {
+        let mut streaming = Fixture::new("streaming", &root.join("none"));
+        streaming.app = Some("Spotify");
+        streaming.extra = vec![root.join("com.spotify.client")];
+        Box::new(streaming) as Box<dyn CleanProvider>
+    };
+    for gated_first in [true, false] {
+        let root = dir.clone();
+        let providers = || {
+            let caches: Box<dyn CleanProvider> = Box::new(Fixture::new("caches", &root));
+            if gated_first {
+                vec![gated(&root), caches]
+            } else {
+                vec![caches, gated(&root)]
+            }
+        };
+        let report = execute_with_spotify_running(providers);
+        assert_eq!(
+            outcomes(&report),
+            vec![FfiItemOutcome::Skipped {
+                reason: FfiSkipReason::AppRunning,
+                detail: Some("Spotify".into())
+            }],
+            "gated_first = {gated_first}"
+        );
+    }
+    remove(&dir);
+}
+
+#[test]
+fn an_ancestor_selected_over_a_gated_child_keeps_the_child_gate() {
+    let dir = fixture_dir("spotify-child", &[], 0);
+    std::fs::create_dir_all(dir.join("Caches/com.spotify.client")).unwrap();
+    let root = dir.clone();
+    let providers = || -> Vec<Box<dyn CleanProvider>> {
+        let mut ancestor = Fixture::new("library", &root.join("none"));
+        ancestor.extra = vec![root.join("Caches")];
+        let mut child = Fixture::new("streaming", &root.join("none"));
+        child.app = Some("Spotify");
+        child.extra = vec![root.join("Caches/com.spotify.client")];
+        vec![Box::new(ancestor), Box::new(child)]
+    };
+    let report = execute_with_spotify_running(providers);
+    assert_eq!(
+        outcomes(&report),
+        vec![FfiItemOutcome::Skipped {
+            reason: FfiSkipReason::AppRunning,
+            detail: Some("Spotify".into())
+        }]
+    );
+    assert!(dir.join("Caches/com.spotify.client").exists());
+    remove(&dir);
+}
 
 #[test]
 fn execute_moves_previewed_paths_and_consumes_the_preview() {

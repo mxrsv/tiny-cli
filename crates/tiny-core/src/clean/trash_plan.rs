@@ -15,6 +15,10 @@ pub struct PlannedItem {
     /// Directories discovery listed or walked for the item's category;
     /// execution acts only on paths inside one of them.
     pub roots: Vec<PathBuf>,
+    /// Selected items merged into this one (the same path, or paths inside
+    /// it). Moving this item moves them too, so their providers' guards and
+    /// app gates apply as well.
+    pub covers: Vec<CleanItem>,
 }
 
 /// Why a selected path is left out of the plan.

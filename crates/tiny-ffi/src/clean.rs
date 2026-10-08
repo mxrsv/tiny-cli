@@ -116,10 +116,17 @@ impl TinySession {
             })?;
         let discovery_id = discovery.id;
         let planned = plan_selection(discovery, candidate_ids)?;
-        let (kept, covered) = partition_overlaps(planned, |(_, plan)| plan.item.path.as_path());
+        let (mut kept, covered) = partition_overlaps(planned, |(_, plan)| plan.item.path.as_path());
         let excluded = covered
             .into_iter()
-            .map(|((id, plan), overlap)| exclusion(&kept, id, &plan, overlap))
+            .map(|((id, plan), overlap)| {
+                let excluded = exclusion(&kept, id, &plan, overlap);
+                // The kept path moves this one too, so it inherits its gates.
+                let (Overlap::Duplicate { kept: index } | Overlap::Inside { kept: index }) =
+                    overlap;
+                kept[index].1.covers.push(plan.item);
+                excluded
+            })
             .collect();
         let preview_id = format!("p{}", state.next_id());
         let preview = FfiPreview {
@@ -399,6 +406,7 @@ fn plan_selection(
                 item: candidate.item.clone(),
                 fingerprint,
                 roots: candidate.roots.as_ref().clone(),
+                covers: Vec::new(),
             };
             Ok((id, plan))
         })

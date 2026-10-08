@@ -2,6 +2,7 @@
 //! before it is moved, and every path gets its own outcome. It never calls
 //! `CleanProvider::execute`, so no provider command runs from here.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -171,17 +172,11 @@ fn act_on(
 
 /// The per-item validator, run immediately before each move: provider
 /// eligibility, `symlink_metadata`, fingerprint, root containment, the
-/// provider's guard, then the running-app check.
+/// providers' guards, then the running-app check. Guards and app gates of
+/// every item merged into this one apply too.
 pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), SkipReason> {
     let item = &planned.item;
-    let provider = ctx
-        .providers
-        .iter()
-        .find(|p| p.id() == item.category_id)
-        .ok_or(SkipReason::UnknownCategory)?;
-    if desktop_report_only(provider.as_ref()).is_some() {
-        return Err(SkipReason::ReportOnly);
-    }
+    let gated = gated_items(planned, ctx)?;
     let meta = fs::symlink_metadata(&item.path).map_err(|e| match e.kind() {
         io::ErrorKind::NotFound => SkipReason::Missing,
         _ => SkipReason::SafetyCheckFailed(e.to_string()),
@@ -199,10 +194,16 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
     {
         return Err(SkipReason::OutsideRoots);
     }
-    provider
-        .check_item(&item.path)
-        .map_err(SkipReason::ProviderGuard)?;
-    for app in provider.item_apps(&item.path) {
+    for (provider, path) in &gated {
+        provider
+            .check_item(path)
+            .map_err(SkipReason::ProviderGuard)?;
+    }
+    let apps: BTreeSet<String> = gated
+        .iter()
+        .flat_map(|(provider, path)| provider.item_apps(path))
+        .collect();
+    for app in apps {
         match ctx.probe.probe(&app) {
             Ok(false) => {}
             Ok(true) => return Err(SkipReason::AppRunning(app)),
@@ -214,6 +215,28 @@ pub fn validate(planned: &PlannedItem, ctx: &ExecContext<'_>) -> Result<(), Skip
         }
     }
     Ok(())
+}
+
+/// The item and every item merged into it, each with its provider. Any
+/// unknown or report-only provider refuses the whole move.
+fn gated_items<'a>(
+    planned: &'a PlannedItem,
+    ctx: &'a ExecContext<'_>,
+) -> Result<Vec<(&'a dyn CleanProvider, &'a Path)>, SkipReason> {
+    std::iter::once(&planned.item)
+        .chain(&planned.covers)
+        .map(|item| {
+            let provider = ctx
+                .providers
+                .iter()
+                .find(|p| p.id() == item.category_id)
+                .ok_or(SkipReason::UnknownCategory)?;
+            if desktop_report_only(provider.as_ref()).is_some() {
+                return Err(SkipReason::ReportOnly);
+            }
+            Ok((provider.as_ref(), item.path.as_path()))
+        })
+        .collect()
 }
 
 /// `path` is `root` or below it, and `root` plus every directory between
@@ -342,6 +365,7 @@ mod tests {
                 risk: RiskLevel::Safe,
             },
             roots: vec![root.to_path_buf()],
+            covers: Vec::new(),
         }
     }
 
@@ -533,6 +557,40 @@ mod tests {
             &outcomes(&report)[0],
             ItemOutcome::Skipped(SkipReason::SafetyCheckFailed(detail)) if detail.contains("Xcode")
         ));
+        let _ = remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn merged_items_keep_their_guards_and_app_gates() {
+        let root = fixture_root("merged", &["cache", "bin"]);
+        let providers = || -> Vec<Box<dyn CleanProvider>> {
+            let mut guarded = fixture("cargo");
+            guarded.guard = Some("bin");
+            let mut gated = fixture("streaming");
+            gated.app = Some("Spotify");
+            vec![
+                Box::new(fixture("caches")),
+                Box::new(guarded),
+                Box::new(gated),
+            ]
+        };
+        // A duplicate found by an app-gated category.
+        let mut duplicate = plan("caches", &root, "cache");
+        duplicate.covers = vec![plan("streaming", &root, "cache").item];
+        // A path covering a guarded one.
+        let mut covering = plan("caches", &root, "cache");
+        covering.covers = vec![plan("cargo", &root, "bin").item];
+        let trash = FakeTrash::default();
+        let running = MockChecker::with_running(["Spotify"]);
+        let report = run(&[duplicate, covering], providers(), &running, &trash, None);
+        assert_eq!(
+            outcomes(&report),
+            vec![
+                ItemOutcome::Skipped(SkipReason::AppRunning("Spotify".into())),
+                ItemOutcome::Skipped(SkipReason::ProviderGuard("bin is protected".into())),
+            ]
+        );
+        assert!(trash.moved.lock().unwrap().is_empty());
         let _ = remove_recursive_safe(&root);
     }
 
