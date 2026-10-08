@@ -12,12 +12,12 @@ use std::sync::{Arc, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use tiny_core::clean::checked_execute::{
-    execute_checked, CheckedExecReport, ExecContext, ItemOutcome, StopReason,
+    execute_checked, CheckedExecReport, ExecContext, ItemOutcome,
 };
 use tiny_core::clean::discover::{
     discover_checked, select_providers_with, validate_options, CategoryOutcome, CheckedCategory,
 };
-use tiny_core::clean::finder_trash::{FinderTrash, Trash, TrashError};
+use tiny_core::clean::finder_trash::{FinderTrash, Trash};
 use tiny_core::clean::fs_safe::{fingerprint, PathFingerprint};
 use tiny_core::clean::process::{AppProbe, RunnerProbe};
 use tiny_core::clean::providers::{
@@ -153,8 +153,9 @@ impl TinySession {
 
     /// Moves the preview's paths to Trash through Finder. The preview is
     /// consumed before the first move, so it can never run twice, even
-    /// after a panic. Returns a per-item report; `AutomationDenied` only
-    /// when Finder access was denied before anything moved.
+    /// after a panic. Always returns the per-item report once execution
+    /// starts; a Finder Automation denial stops it with
+    /// `stopped = AutomationDenied`.
     pub fn clean_execute(
         &self,
         preview_id: String,
@@ -260,11 +261,6 @@ impl TinySession {
             progress: Some(&report),
         };
         let executed = execute_checked(&plan, &ctx);
-        if executed.stopped == Some(StopReason::AutomationDenied) && executed.moved_count() == 0 {
-            return Err(FfiError::AutomationDenied {
-                detail: denial_detail(&executed),
-            });
-        }
         Ok(exec_report(&items, executed))
     }
 
@@ -486,20 +482,6 @@ fn exec_report(items: &[(String, PlannedItem)], executed: CheckedExecReport) -> 
         })
         .collect();
     FfiExecReport { results, ..summary }
-}
-
-fn denial_detail(executed: &CheckedExecReport) -> String {
-    executed
-        .results
-        .iter()
-        .find_map(|r| match &r.outcome {
-            ItemOutcome::Failed {
-                error: TrashError::AutomationDenied(detail),
-                ..
-            } => Some(detail.clone()),
-            _ => None,
-        })
-        .unwrap_or_default()
 }
 
 fn total_size<'a>(items: impl Iterator<Item = &'a CleanItem>) -> u64 {

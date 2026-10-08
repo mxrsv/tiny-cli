@@ -5,6 +5,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use tiny_core::clean::finder_trash::TrashError;
 use tiny_core::clean::fs_safe::{dir_size_checked, list_children};
 use tiny_core::clean::types::{ExecAction, ExecReport, RiskLevel};
 use tiny_core::error::Result as CoreResult;
@@ -633,7 +634,7 @@ fn cancellation_before_execute_moves_nothing_and_reports_not_attempted() {
 }
 
 #[test]
-fn automation_denial_before_any_move_is_a_typed_error() {
+fn automation_denial_stops_with_a_report_and_consumes_the_preview() {
     let dir = fixture_dir("denied", &["a", "b"], 1);
     let session = TinySession::new();
     let preview = preview_all(&session, &dir);
@@ -642,10 +643,20 @@ fn automation_denial_before_any_move_is_a_typed_error() {
         ..Default::default()
     };
     let token = CancellationToken::default();
-    let result = execute(&session, &preview.preview_id, &dir, &trash, &token);
-    assert!(
-        matches!(result, Err(FfiError::AutomationDenied { detail }) if detail.contains("-1743"))
+    let report = execute(&session, &preview.preview_id, &dir, &trash, &token).unwrap();
+    assert_eq!(report.stopped, Some(FfiStopReason::AutomationDenied));
+    assert_eq!(
+        outcomes(&report),
+        vec![
+            FfiItemOutcome::Failed {
+                reason: FfiTrashFailure::AutomationDenied,
+                detail: "(-1743)".into(),
+                source_still_present: true,
+            },
+            FfiItemOutcome::NotAttempted,
+        ]
     );
+    assert_eq!(report.moved_count, 0);
     assert!(dir.join("a").exists() && dir.join("b").exists());
     let retry = execute(
         &session,
