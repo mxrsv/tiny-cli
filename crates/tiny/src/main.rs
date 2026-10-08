@@ -16,5 +16,6 @@ fn main() -> Result<()> {
         Commands::Focus(opts) => render::focus::run(opts),
         Commands::Uninstall(opts) => render::uninstall::run(opts),
         Commands::Clean(opts) => render::clean::run(opts),
+        Commands::Processes(opts) => render::processes::run(opts),
     }
 }

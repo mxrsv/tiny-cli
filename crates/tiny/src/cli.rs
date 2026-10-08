@@ -30,6 +30,67 @@ pub enum Commands {
 
     /// Interactive cleanup of developer caches and recoverable data
     Clean(CleanOpts),
+
+    /// List, inspect and quit your processes
+    Processes(ProcessesOpts),
+}
+
+#[derive(Args, Debug)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct ProcessesOpts {
+    #[command(subcommand)]
+    pub action: Option<ProcessesAction>,
+
+    /// Sort order applied to the list.
+    #[arg(long, value_enum, default_value_t = ProcessSort::Cpu)]
+    pub sort: ProcessSort,
+
+    /// Maximum number of processes to list. Ignored with --port, which lists
+    /// every visible owner.
+    #[arg(long, default_value_t = 20)]
+    pub limit: usize,
+
+    /// Emit a machine-readable JSON report on stdout instead of text.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Only list visible owners of this listening TCP port.
+    #[arg(long, value_name = "PORT")]
+    pub port: Option<u16>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ProcessesAction {
+    /// Show one process with its parent, children and listening ports
+    Show {
+        pid: u32,
+
+        /// Emit JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Ask a process to quit (SIGTERM), or end it at once with --force (SIGKILL)
+    Quit {
+        pid: u32,
+
+        /// Send SIGKILL instead of SIGTERM. Unsaved work is lost.
+        #[arg(long)]
+        force: bool,
+
+        /// Skip the confirmation prompt. With --force this also requires
+        /// TINY_CONFIRM_FORCE=1.
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcessSort {
+    /// Highest CPU first
+    Cpu,
+    /// Highest resident memory first
+    Memory,
 }
 
 #[derive(Args, Debug)]
@@ -208,6 +269,14 @@ impl From<ScanSort> for tiny_core::options::ScanSort {
             ScanSort::Size => Self::Size,
             ScanSort::Age => Self::Age,
             ScanSort::Path => Self::Path,
+        }
+    }
+}
+impl From<ProcessSort> for tiny_core::processes::ProcessSort {
+    fn from(value: ProcessSort) -> Self {
+        match value {
+            ProcessSort::Cpu => Self::Cpu,
+            ProcessSort::Memory => Self::Memory,
         }
     }
 }
