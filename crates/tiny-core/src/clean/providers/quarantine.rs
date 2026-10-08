@@ -27,6 +27,10 @@ impl CleanProvider for Quarantine {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Gatekeeper history of opened downloads; clearing it may bring back first-open prompts"
+            .into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

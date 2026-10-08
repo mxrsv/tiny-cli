@@ -37,6 +37,9 @@ impl CleanProvider for AndroidSdk {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        format!("Android caches the IDE re-downloads, plus emulator system images untouched for {} days", self.idle_days)
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

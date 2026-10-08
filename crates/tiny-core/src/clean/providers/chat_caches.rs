@@ -50,6 +50,9 @@ impl CleanProvider for ChatCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Chat app caches and downloaded media the app fetches again when needed".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

@@ -18,6 +18,9 @@ impl CleanProvider for UserCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Per-app caches in ~/Library/Caches that apps rebuild".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

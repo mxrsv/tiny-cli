@@ -23,6 +23,9 @@ impl CleanProvider for XcodeDerivedData {
     fn label(&self) -> &'static str {
         DERIVED_LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Build output Xcode regenerates on the next build".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Safe
     }
@@ -63,6 +66,10 @@ impl CleanProvider for XcodeArchives {
     fn label(&self) -> &'static str {
         ARCHIVES_LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "App archives from past Xcode builds; needed only to re-export or symbolicate those builds"
+            .into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
@@ -102,6 +109,9 @@ impl CleanProvider for XcodeDeviceSupport {
     }
     fn label(&self) -> &'static str {
         DS_LABEL
+    }
+    fn inclusion_reason(&self) -> String {
+        "Device support files Xcode re-downloads when a device connects".into()
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review

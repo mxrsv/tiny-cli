@@ -28,6 +28,9 @@ impl CleanProvider for IosSimulators {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Simulator caches and devices Xcode can recreate".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

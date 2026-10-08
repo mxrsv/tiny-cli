@@ -53,6 +53,9 @@ impl CleanProvider for StreamingCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Streaming app caches the app downloads again when needed".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

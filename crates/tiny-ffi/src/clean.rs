@@ -309,6 +309,7 @@ fn store_category(
     let mut ffi = FfiCleanCategory {
         id: category.id,
         label: category.label,
+        inclusion_reason: category.inclusion_reason,
         family,
         risk: category.risk.into(),
         status: FfiCategoryStatus::Found,

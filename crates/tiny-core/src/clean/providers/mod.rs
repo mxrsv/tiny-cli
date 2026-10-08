@@ -90,6 +90,9 @@ pub fn category_family(category_id: &str) -> Family {
 pub trait CleanProvider {
     fn id(&self) -> &'static str;
     fn label(&self) -> &'static str;
+    /// One English sentence on why this category's items are candidates,
+    /// shown beside them on the desktop (PC-C1). Not printed by the CLI.
+    fn inclusion_reason(&self) -> String;
     fn risk(&self) -> RiskLevel;
 
     /// Process name that should NOT be running before discover/execute.
@@ -466,6 +469,41 @@ mod tests {
                     provider.id()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_category_states_why_its_items_are_candidates() {
+        let runner: Arc<dyn CommandRunner> =
+            Arc::new(crate::runner::test_support::MockRunner::new());
+        let opts = crate::options::CleanOptions {
+            idle_days: 45,
+            ..Default::default()
+        };
+        let providers = all_providers_with(&opts, runner);
+        let ids: Vec<&str> = providers.iter().map(|p| p.id()).collect();
+        assert_eq!(ids, known_category_ids());
+        for provider in &providers {
+            let reason = provider.inclusion_reason();
+            assert!(!reason.trim().is_empty(), "{} has no reason", provider.id());
+        }
+        let reason_of = |id: &str| {
+            providers
+                .iter()
+                .find(|p| p.id() == id)
+                .unwrap()
+                .inclusion_reason()
+        };
+        for idle in [
+            "node-modules",
+            "rust-targets",
+            "python-caches",
+            "downloads-old",
+        ] {
+            assert!(
+                reason_of(idle).contains("45 days"),
+                "{idle} names its threshold"
+            );
         }
     }
 

@@ -48,6 +48,9 @@ impl CleanProvider for Docker {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Unused Docker images, build cache and volumes reported by docker system df".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

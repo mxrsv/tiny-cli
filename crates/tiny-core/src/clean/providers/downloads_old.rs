@@ -31,6 +31,12 @@ impl CleanProvider for DownloadsOld {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        format!(
+            "Files directly in Downloads not modified for {} days",
+            self.idle_days
+        )
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

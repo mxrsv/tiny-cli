@@ -25,6 +25,9 @@ impl CleanProvider for GradleMaven {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Gradle and Maven caches re-downloaded on the next build".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

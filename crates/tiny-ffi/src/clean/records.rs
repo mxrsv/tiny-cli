@@ -79,6 +79,9 @@ pub struct FfiCleanCandidate {
 pub struct FfiCleanCategory {
     pub id: String,
     pub label: String,
+    /// Why this category's items are candidates; English diagnostic text
+    /// Swift may show or replace with its own copy.
+    pub inclusion_reason: String,
     /// `dev`, `user-storage` or `system`; `None` for an unregistered ID.
     pub family: Option<String>,
     pub risk: FfiRisk,

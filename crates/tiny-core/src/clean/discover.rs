@@ -64,6 +64,8 @@ pub enum CategoryOutcome {
 pub struct CheckedCategory {
     pub id: String,
     pub label: String,
+    /// Why the category's items are candidates (`CleanProvider::inclusion_reason`).
+    pub inclusion_reason: String,
     pub risk: RiskLevel,
     pub outcome: CategoryOutcome,
 }
@@ -234,6 +236,7 @@ pub fn discover_checked(
         categories.push(CheckedCategory {
             id: provider.id().to_string(),
             label: provider.label().to_string(),
+            inclusion_reason: provider.inclusion_reason(),
             risk: provider.risk(),
             outcome,
         });
@@ -428,6 +431,9 @@ mod tests {
             fn risk(&self) -> RiskLevel {
                 RiskLevel::Safe
             }
+            fn inclusion_reason(&self) -> String {
+                "fixture".into()
+            }
             fn requires_app_quit(&self) -> Option<&'static str> {
                 self.app
             }
@@ -463,6 +469,9 @@ mod tests {
             }
             fn risk(&self) -> RiskLevel {
                 RiskLevel::Safe
+            }
+            fn inclusion_reason(&self) -> String {
+                "fixture".into()
             }
             fn available(&self) -> bool {
                 self.0.which("fake-tool")
@@ -527,6 +536,7 @@ mod tests {
             let category = |id: &str, outcome| CheckedCategory {
                 id: id.into(),
                 label: id.into(),
+                inclusion_reason: String::new(),
                 risk: RiskLevel::Safe,
                 outcome,
             };

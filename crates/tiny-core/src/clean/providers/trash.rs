@@ -20,6 +20,9 @@ impl CleanProvider for TrashProvider {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Items already in the Trash; emptying it is permanent".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Destructive
     }

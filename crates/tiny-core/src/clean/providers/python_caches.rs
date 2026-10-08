@@ -33,6 +33,12 @@ impl CleanProvider for PythonCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        format!(
+            "__pycache__ folders, and virtualenvs whose project manifest is untouched for {} days",
+            self.idle_days
+        )
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

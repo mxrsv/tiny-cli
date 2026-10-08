@@ -28,6 +28,9 @@ impl CleanProvider for VsCode {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "VS Code caches and logs the editor rebuilds".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

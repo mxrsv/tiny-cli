@@ -53,6 +53,9 @@ impl CleanProvider for TimeMachineLocal {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Local Time Machine snapshots macOS also thins on its own".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Destructive
     }

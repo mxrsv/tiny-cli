@@ -25,6 +25,9 @@ impl CleanProvider for CrashReports {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Crash and diagnostic reports kept only for troubleshooting".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Safe
     }

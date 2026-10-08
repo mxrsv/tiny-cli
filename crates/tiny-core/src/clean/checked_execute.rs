@@ -272,6 +272,9 @@ mod tests {
         fn risk(&self) -> RiskLevel {
             self.risk
         }
+        fn inclusion_reason(&self) -> String {
+            "fixture".into()
+        }
         fn requires_app_quit(&self) -> Option<&'static str> {
             self.app
         }

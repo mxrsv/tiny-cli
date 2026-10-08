@@ -17,6 +17,9 @@ impl CleanProvider for UserLogs {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "App logs kept only for troubleshooting".into()
+    }
 
     fn risk(&self) -> RiskLevel {
         RiskLevel::Safe

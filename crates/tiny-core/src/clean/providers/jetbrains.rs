@@ -24,6 +24,9 @@ impl CleanProvider for JetBrains {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "JetBrains IDE caches and logs the IDE rebuilds".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

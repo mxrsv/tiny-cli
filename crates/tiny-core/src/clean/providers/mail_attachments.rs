@@ -24,6 +24,9 @@ impl CleanProvider for MailAttachments {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Attachment copies Mail saved after you opened them".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

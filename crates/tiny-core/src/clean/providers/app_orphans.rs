@@ -96,6 +96,9 @@ impl CleanProvider for AppOrphans {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Application Support folders whose name matches no installed app's bundle ID".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

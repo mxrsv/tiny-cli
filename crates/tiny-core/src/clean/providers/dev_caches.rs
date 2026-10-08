@@ -40,6 +40,9 @@ impl CleanProvider for CargoCache {
     fn label(&self) -> &'static str {
         CARGO_LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Cargo registry and git caches Cargo re-downloads on the next build".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
@@ -125,6 +128,9 @@ impl CleanProvider for NpmCache {
     fn label(&self) -> &'static str {
         NPM_LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "npm package cache npm re-downloads when needed".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
@@ -177,6 +183,9 @@ impl CleanProvider for PnpmStore {
     fn label(&self) -> &'static str {
         PNPM_LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "pnpm content store pnpm re-downloads when needed".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }
@@ -228,6 +237,9 @@ impl CleanProvider for YarnCache {
     }
     fn label(&self) -> &'static str {
         YARN_LABEL
+    }
+    fn inclusion_reason(&self) -> String {
+        "Yarn package cache Yarn re-downloads when needed".into()
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review

@@ -60,6 +60,12 @@ impl CleanProvider for ScreenshotsOld {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        format!(
+            "Screenshots in the capture folder not modified for {} days",
+            self.idle_days
+        )
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

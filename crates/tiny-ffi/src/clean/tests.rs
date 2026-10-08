@@ -46,6 +46,9 @@ impl CleanProvider for Fixture {
     fn risk(&self) -> RiskLevel {
         self.risk
     }
+    fn inclusion_reason(&self) -> String {
+        "fixture".into()
+    }
     fn requires_app_quit(&self) -> Option<&'static str> {
         self.app
     }
@@ -216,6 +219,7 @@ fn preview_is_built_from_discovered_ids_only() {
     assert_eq!(category.desktop_action, FfiDesktopAction::MoveToTrash);
     assert_eq!(category.total_bytes, 8);
     assert_eq!(category.family, None, "fixture IDs are not registered");
+    assert_eq!(category.inclusion_reason, "fixture");
 
     let preview = session.clean_preview(ids(&discovery)).unwrap();
     assert_eq!(preview.items.len(), 2);

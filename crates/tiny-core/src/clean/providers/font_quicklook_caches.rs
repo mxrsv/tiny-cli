@@ -59,6 +59,9 @@ impl CleanProvider for FontQuicklookCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Font and Quick Look thumbnail caches macOS rebuilds".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Safe
     }

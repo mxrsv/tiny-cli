@@ -55,6 +55,9 @@ impl CleanProvider for BrowserCaches {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Browser cache folders (never cookies, logins or history) the browser rebuilds".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

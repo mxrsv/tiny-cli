@@ -39,6 +39,9 @@ impl CleanProvider for GoCache {
     fn label(&self) -> &'static str {
         LABEL
     }
+    fn inclusion_reason(&self) -> String {
+        "Go build and module caches Go re-creates on the next build".into()
+    }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
     }

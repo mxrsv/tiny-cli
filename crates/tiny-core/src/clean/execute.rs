@@ -129,6 +129,9 @@ mod tests {
         fn risk(&self) -> RiskLevel {
             RiskLevel::Safe
         }
+        fn inclusion_reason(&self) -> String {
+            "fixture".into()
+        }
         fn discover(
             &self,
             _ctx: &crate::clean::scan_context::ScanContext<'_>,
