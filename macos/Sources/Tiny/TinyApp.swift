@@ -33,7 +33,7 @@ struct TinyNativeApp: App {
                 TinyNativeApp.main()
             } else {
                 throw NSError(domain: "Tiny", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                    "Usage: Tiny [--smoke-test | --snapshot /absolute/path.png [member|app|notice|minimum]]"])
+                    "Usage: Tiny [--smoke-test | --snapshot /absolute/path.png [member|app|notice|minimum|clean|review|report]]"])
             }
         } catch {
             FileHandle.standardError.write(Data("Tiny: \(error.localizedDescription)\n".utf8))
@@ -68,57 +68,5 @@ struct TinyNativeApp: App {
         }
         print("PASS: \(first.processes.count) real processes; own PID \(ownPID); owned child appeared and exited; detail PID \(detail.process.pid); first CPU unmeasured \(!first.cpuMeasured)")
         print("System CPU \(systemCPU)% (all cores); RAM \(used)/\(total) bytes")
-    }
-
-    enum SnapshotScene: String { case member, app, notice, minimum }
-
-    /// Renders the app's own view with real data. Scenes only select or stage
-    /// copy; nothing is confirmed, and the marker directory is throwaway.
-    @MainActor private static func snapshot(to url: URL, scene: SnapshotScene) async throws {
-        NSApplication.shared.setActivationPolicy(.prohibited)
-        let markers = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-snapshot-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: markers) }
-        if scene == .notice { try InFlightMarker(directory: markers).begin(UUID(), summary: "Force Quit “sleep” (PID 4242)") }
-        let child = Process()
-        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        child.arguments = ["60"]
-        try child.run()
-        defer { if child.isRunning { child.terminate(); child.waitUntilExit() } }
-        let state = AppState(markerDirectory: markers)
-        state.requestRefresh()
-        await state.waitForRefresh()
-        guard state.listError == nil, !state.processes.isEmpty else {
-            throw NSError(domain: "Tiny", code: 4, userInfo: [NSLocalizedDescriptionKey: state.listError ?? "No process data"])
-        }
-        let ownPID = UInt32(ProcessInfo.processInfo.processIdentifier)
-        if scene == .app, let app = state.visibleGroups.first(where: { group in
-            group.isApplication && !group.members.contains { $0.pid == ownPID }
-        }) {
-            state.selectGroup(app.id)
-        } else if let owned = state.processes.first(where: { $0.pid == UInt32(child.processIdentifier) }) {
-            state.select(owned.identity)
-            await state.waitForRefresh()
-        }
-        state.requestRefresh()
-        await state.waitForRefresh()
-        let size = scene == .minimum ? NSSize(width: 1060, height: 740) : NSSize(width: 1240, height: 850)
-        let host = NSHostingView(rootView: ProcessesView(state: state, startsPolling: false)
-            .frame(width: size.width, height: size.height))
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
-                              backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.contentView = host
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .seconds(1))
-        try withExtendedLifetime(window) { try writeSnapshot(host: host, to: url) }
-        print("Rendered \(state.processes.count) live processes to \(url.path)")
-    }
-
-    @MainActor private static func writeSnapshot(host: NSView, to url: URL) throws {
-        host.layoutSubtreeIfNeeded()
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw CocoaError(.fileWriteUnknown) }
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
-        try png.write(to: url, options: .atomic)
     }
 }

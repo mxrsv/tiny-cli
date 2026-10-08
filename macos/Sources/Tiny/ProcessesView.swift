@@ -11,20 +11,12 @@ struct ProcessesView: View {
             if let notice = state.actions.notice {
                 NoticeBanner(notice: notice) { state.actions.dismissNotice() }
             }
-            HStack(spacing: Theme.gap) {
-                UsageWidget(title: "CPU · SYSTEM", value: systemCPUText,
-                    subtitle: "All cores · 0–100%", fraction: state.systemUsage?.cpuPercent.map { Double($0) / 100 },
-                    icon: "cpu", tint: Theme.accent, state: state.status).frame(width: Self.widgetWidth)
-                UsageWidget(title: "RAM · SYSTEM", value: systemRAMText,
-                    subtitle: systemRAMSubtitle, fraction: systemRAMFraction,
-                    icon: "memorychip", tint: .cyan, state: state.status).frame(width: Self.widgetWidth)
-                PortsTile(state: state)
-            }.frame(height: 176)
-            HStack(alignment: .top, spacing: Theme.gap) {
-                processList.frame(maxWidth: .infinity, maxHeight: .infinity)
-                ProcessDetailView(state: state).frame(width: 306)
+            if state.screen == .clean {
+                CleanView(clean: state.clean, actions: state.actions)
+            } else {
+                activity
             }
-            dock
+            Dock(state: state)
         }
         .padding(26)
         .frame(minWidth: 1060, minHeight: 740)
@@ -33,7 +25,7 @@ struct ProcessesView: View {
         .tint(Theme.accent)
         .onChange(of: state.actions.pending?.id) { _, id in
             guard id != nil, let request = state.actions.pending else { return }
-            guard let window = NSApp.keyWindow ?? NSApp.mainWindow, window.attachedSheet == nil else {
+            guard let window = ConfirmationAlert.hostWindow() else {
                 state.actions.confirmationUnavailable()
                 return
             }
@@ -42,21 +34,38 @@ struct ProcessesView: View {
         .task { if startsPolling { await state.run() } }
     }
 
+    @ViewBuilder private var activity: some View {
+        HStack(spacing: Theme.gap) {
+            UsageWidget(title: "CPU · SYSTEM", value: systemCPUText,
+                subtitle: "All cores · 0–100%", fraction: state.systemUsage?.cpuPercent.map { Double($0) / 100 },
+                icon: "cpu", tint: Theme.accent, state: state.status).frame(width: Self.widgetWidth)
+            UsageWidget(title: "RAM · SYSTEM", value: systemRAMText,
+                subtitle: systemRAMSubtitle, fraction: systemRAMFraction,
+                icon: "memorychip", tint: .cyan, state: state.status).frame(width: Self.widgetWidth)
+            PortsTile(state: state)
+        }.frame(height: 176)
+        HStack(alignment: .top, spacing: Theme.gap) {
+            processList.frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProcessDetailView(state: state).frame(width: 306)
+        }
+    }
+
     private static let widgetWidth: CGFloat = 300
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "waveform.path.ecg")
+            Image(systemName: state.screen == .clean ? "sparkles" : "waveform.path.ecg")
                 .font(.system(size: 24, weight: .medium)).foregroundStyle(Theme.accent)
                 .frame(width: 52, height: 52)
                 .background(Theme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 4) {
-                Text("Apps & activity").font(.system(size: 30, weight: .semibold, design: .rounded))
-                Text("Your apps, and the work behind them.").foregroundStyle(.secondary)
+                Text(state.screen == .clean ? "Clean" : "Apps & activity").font(.system(size: 30, weight: .semibold, design: .rounded))
+                Text(state.screen == .clean ? "Caches and leftovers you can move to the Trash." : "Your apps, and the work behind them.")
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             Text("tiny").font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(.secondary)
-            Pill(text: "ASKS BEFORE QUITTING")
+            Pill(text: "ASKS BEFORE ACTING")
         }
     }
 
@@ -160,36 +169,5 @@ struct ProcessesView: View {
                     description: Text(state.query.isEmpty ? "Refresh to read the current process list." : "Try another app, process, PID or owner."))
             }
         }
-    }
-
-    private var dock: some View {
-        HStack(spacing: 12) {
-            Circle().fill(state.status == "Live" ? Theme.accent : .orange).frame(width: 7, height: 7)
-            Text(state.status).fontWeight(.semibold)
-            if let sampled = state.sampledAt {
-                Text("Sample \(sampled.formatted(date: .omitted, time: .standard))").foregroundStyle(.secondary)
-            }
-            if state.refreshing { ProgressView().controlSize(.small).accessibilityLabel("Refreshing processes") }
-            Spacer()
-            if let running = state.actions.running {
-                ProgressView().controlSize(.small).accessibilityHidden(true)
-                Text("\(running.summary)…").lineLimit(1).foregroundStyle(.secondary)
-            } else {
-                Text("Quit and Force Quit always ask first").foregroundStyle(.secondary)
-            }
-            Button {
-                state.paused.toggle()
-                if !state.paused { state.requestRefresh() }
-            } label: {
-                Label(state.paused ? "Resume" : "Pause", systemImage: state.paused ? "play.fill" : "pause.fill")
-            }.help("Pause or resume automatic refresh every 2 seconds")
-            Button { state.requestRefresh(includingPorts: true) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                .keyboardShortcut("r", modifiers: .command).disabled(state.refreshing)
-        }
-        .font(.system(size: 12))
-        .buttonStyle(.bordered)
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.10)))
     }
 }
