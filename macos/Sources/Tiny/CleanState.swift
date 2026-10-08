@@ -38,6 +38,8 @@ final class CleanState {
     private(set) var preview: FfiPreview?
     private(set) var previewExpiresAt: Date?
     private(set) var previewLoading = false
+    /// Selection whose preview failed; asking again would only repeat the error.
+    private(set) var previewFailedFor: [String]?
     private(set) var report: FfiExecReport?
     /// Preview ID shown in the open confirmation; it can be confirmed once.
     private(set) var pendingConfirmation: String?
@@ -80,6 +82,7 @@ final class CleanState {
         return map
     }
     var canReview: Bool { phase == .ready && !selection.isEmpty && error?.needsRescan != true }
+    var canUpdatePreview: Bool { canReview && !previewLoading && previewFailedFor != selection.sorted() }
 
     static func isSelectable(_ category: FfiCleanCategory) -> Bool {
         category.desktopAction == .moveToTrash && category.status == .found
@@ -170,9 +173,10 @@ final class CleanState {
 
     @discardableResult
     func requestPreview() -> Task<Void, Never>? {
-        guard canReview, !previewLoading else { return nil }
+        guard canUpdatePreview else { return nil }
         let ids = selection.sorted()
         previewLoading = true
+        previewFailedFor = nil
         return Task {
             defer { previewLoading = false }
             do {
@@ -180,7 +184,9 @@ final class CleanState {
                 guard selection.sorted() == ids, phase == .ready else { return }
                 preview = result
                 previewExpiresAt = now().addingTimeInterval(TimeInterval(result.expiresInSeconds))
+                if error?.needsRescan == false { error = nil }
             } catch {
+                previewFailedFor = ids
                 self.error = CleanCopy.error(error, during: .preview)
             }
         }
@@ -267,14 +273,16 @@ final class CleanState {
         progress = nil
     }
 
+    /// The selection changed: drop the preview, and any error a new preview may fix.
     private func invalidatePreview() {
         preview = nil
         previewExpiresAt = nil
+        if error?.needsRescan == false { error = nil }
     }
 
     private func requireRescan(_ error: CleanError) {
-        self.error = error
         invalidatePreview()
+        self.error = error
         reviewing = false
         finish(discovery == nil ? .idle : .ready)
     }

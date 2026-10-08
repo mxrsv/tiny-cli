@@ -8,10 +8,11 @@ import TinyEngine
         try await previewConfirmExecuteRunsOnce()
         try reportMapping()
         try await errorStatesRequireRescan()
+        try await previewErrorsShowAndDoNotRepeat()
         try await markerAroundExecute()
         try await progressOwnership()
         try await realDiscoveryIsReadOnlyAndScoped()
-        print("PASS: 7 clean checks (selection, confirm/execute once, report, errors, marker, progress, real discovery)")
+        print("PASS: 8 clean checks (selection, confirm/execute once, report, errors, preview errors, marker, progress, real discovery)")
     }
 
     private static func selectionRules() async throws {
@@ -144,6 +145,22 @@ import TinyEngine
         try check(expiring.requestMove() == nil && expiring.error == CleanCopy.expired, "an expired preview requires a rescan")
     }
 
+    /// M3: preview errors keep Rust's detail, name the operation, and do not repeat.
+    private static func previewErrorsShowAndDoNotRepeat() async throws {
+        let (clean, engine, _, cleanup) = make()
+        defer { cleanup() }
+        await clean.scan()?.value
+        await engine.failPreview(with: .InvalidInput(detail: "/x is report-only on the desktop"))
+        await clean.requestPreview()?.value
+        try check(clean.error?.message.hasPrefix("Preview failed: /x is report-only") == true, "preview error keeps Rust's detail")
+        try check(!clean.canUpdatePreview && clean.requestPreview() == nil, "the same selection cannot repeat the error")
+        await engine.failPreview(with: nil)
+        clean.toggle(candidate: "review-1")
+        try check(clean.error == nil && clean.canUpdatePreview, "changing the selection clears it and allows a new preview")
+        try check(CleanCopy.error(CocoaError(.featureUnsupported), during: .preview).message.hasPrefix("Preview failed"),
+                  "an unexpected preview error does not say scan")
+    }
+
     private static func markerAroundExecute() async throws {
         let (clean, engine, marker, cleanup) = make()
         defer { cleanup() }
@@ -230,11 +247,13 @@ actor FakeCleanEngine: CleanEngine {
     private(set) var markersDuringExecute: [String] = []
     private var executeError: FfiError?
     private var discoverError: FfiError?
+    private var previewError: FfiError?
     private var panics = false
     private var marker: InFlightMarker?
 
     func failExecute(with error: FfiError) { executeError = error }
     func failDiscover(with error: FfiError?) { discoverError = error }
+    func failPreview(with error: FfiError?) { previewError = error }
     func panicExecute() { panics = true }
     func observeMarker(_ marker: InFlightMarker) { self.marker = marker }
 
@@ -252,6 +271,7 @@ actor FakeCleanEngine: CleanEngine {
     }
 
     func cleanPreview(_ candidateIds: [String]) async throws -> FfiPreview {
+        if let previewError { throw previewError }
         let all = try await cleanDiscover(CleanState.options, token: CancellationToken(), progress: ProgressRelay { _ in })
             .categories.flatMap(\.candidates)
         let items = candidateIds.compactMap { id in all.first { $0.id == id } }.map { item in

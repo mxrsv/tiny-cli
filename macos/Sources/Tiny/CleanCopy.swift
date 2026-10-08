@@ -72,8 +72,9 @@ enum CleanCopy {
     }
 
     static func error(_ error: any Error, during operation: CleanState.Operation) -> CleanError {
+        let failed = operation == .scan ? "Scan failed" : operation == .preview ? "Preview failed" : "Cleanup failed"
         guard let error = error as? FfiError else {
-            return CleanError(message: "Scan failed unexpectedly. Nothing was changed. \(error.localizedDescription)", needsRescan: false)
+            return CleanError(message: "\(failed) unexpectedly. Nothing was moved. \(error.localizedDescription)", needsRescan: false)
         }
         switch error {
         case .Busy:
@@ -86,10 +87,11 @@ enum CleanCopy {
         case .UntrustedHome(let detail):
             return CleanError(message: "Tiny's HOME folder cannot be trusted (\(detail)), so cleanup is turned off. Nothing was scanned or moved. Open Tiny from Finder and try again.",
                               needsRescan: true)
-        case .InvalidInput:
-            return CleanError(message: "Select at least one item that can be moved to the Trash.", needsRescan: false)
+        case .InvalidInput(let detail):
+            // Rust names the item, e.g. "X is report-only" or "X could not be inspected".
+            return CleanError(message: "\(failed): \(detail). Change the selection; nothing was moved.", needsRescan: false)
         default:
-            return CleanError(message: "Cleanup failed. Nothing was moved. \(ActionCopy.describe(error))", needsRescan: operation != .scan)
+            return CleanError(message: "\(failed). Nothing was moved. \(ActionCopy.describe(error))", needsRescan: operation == .execute)
         }
     }
 

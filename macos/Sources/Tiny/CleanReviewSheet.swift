@@ -66,6 +66,10 @@ struct CleanReviewSheet: View {
 
     @ViewBuilder private var previewSection: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let error = clean.error {
+                Label(error.message, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
             if clean.previewLoading {
                 HStack { ProgressView().controlSize(.small); Text("Checking the selection…").foregroundStyle(.secondary) }
             } else if let preview = clean.preview {
@@ -90,8 +94,8 @@ struct CleanReviewSheet: View {
                 }
             } else {
                 HStack {
-                    Text("The selection changed.").foregroundStyle(.secondary)
-                    Button("Update Preview") { clean.requestPreview() }.disabled(!clean.canReview)
+                    Text(clean.error == nil ? "The selection changed." : "Change the selection to try again.").foregroundStyle(.secondary)
+                    Button("Update Preview") { clean.requestPreview() }.disabled(!clean.canUpdatePreview)
                 }
             }
         }
