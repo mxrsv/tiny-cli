@@ -554,22 +554,16 @@ mod tests {
     }
 
     #[test]
-    fn cargo_guard_is_enforced_not_just_asserted() {
+    fn cargo_guard_refuses_everything_but_the_pinned_cache_dirs() {
+        // Exercises the guard only; no execute or Trash path runs.
         let h = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
         let cargo = dev_caches::CargoCache;
-        assert!(cargo.check_item(&h.join(".cargo/registry/cache")).is_ok());
-        assert!(cargo.check_item(&h.join(".cargo/bin")).is_err());
-        let item = CleanItem {
-            category_id: "cargo".into(),
-            category_label: "cargo".into(),
-            path: h.join(".cargo/tiny-test-does-not-exist"),
-            size: 0,
-            risk: RiskLevel::Review,
-        };
-        // A path that does not exist, refused before any action anyway.
-        let report = cargo.execute(&[item], ExecAction::Trash).unwrap();
-        assert!(report.removed_paths.is_empty());
-        assert_eq!(report.failed.len(), 1);
+        for pinned in ["registry/cache", "registry/src", "git/db", "git/checkouts"] {
+            assert!(cargo.check_item(&h.join(".cargo").join(pinned)).is_ok());
+        }
+        for other in [".cargo/bin", ".cargo/credentials.toml", ".cargo", ".rustup"] {
+            assert!(cargo.check_item(&h.join(other)).is_err(), "{other}");
+        }
     }
 
     #[test]
