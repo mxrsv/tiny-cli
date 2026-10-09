@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Specimen A · Quiet stage</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="macbook.css">
+<style>
+  /* A: Apple's macOS page, closest reading. Centred text on white, the
+     MacBook alone on a soft floor; the primary appears only on the CTA and
+     in the glow under the device. */
+  body { background: var(--surface); }
+  .nav-top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; align-items: center; gap: 24px; max-width: 980px; margin: 0 auto; padding: 12px 22px; background: rgba(255,255,255,.8); backdrop-filter: saturate(1.8) blur(20px); -webkit-backdrop-filter: saturate(1.8) blur(20px); }
+  .nav-top .brand { margin-right: auto; }
+  .nav-top a { color: var(--ink); text-decoration: none; }
+  .hero { padding: 64px 22px 0; text-align: center; overflow: hidden; }
+  .eyebrow { color: var(--primary-deep); }
+  .hero h1 { margin-top: 10px; }
+  .hero .intro { max-width: 640px; margin: 18px auto 0; color: var(--ink-2); }
+  .cta { max-width: 480px; margin: 32px auto 0; display: grid; gap: 12px; justify-items: center; }
+  .cta .waitlist { width: 100%; }
+  .stage { position: relative; max-width: 1080px; margin: 56px auto 0; padding: 0 3% 72px; }
+  .stage::before { content: ""; position: absolute; inset: 30% 6% 0; background: radial-gradient(50% 50% at 50% 70%, rgba(145,174,201,.55), transparent 70%); filter: blur(30px); z-index: -1; }
+  @media (max-width: 734px) { .nav-top .hide-s { display: none; } .hero { padding-top: 40px; } }
+</style>
+</head>
+<body>
+  <nav class="nav-top t-callout" aria-label="Main">
+    <span class="brand t-strong">tiny</span>
+    <a class="hide-s" href="#">Features</a><a class="hide-s" href="#">Pricing</a><a class="hide-s" href="#">Docs</a>
+    <a class="link" href="https://github.com/mxrsv/tiny-cli">GitHub</a>
+  </nav>
+  <main class="hero">
+    <p class="eyebrow t-lead">tiny for Mac</p>
+    <h1 class="t-display">Room to work again.</h1>
+    <p class="intro t-body">See what is filling your disk and slowing your Mac, then send it to the Trash with every path and size in front of you. Open source at the core.</p>
+    <div class="cta">
+      <form class="waitlist" aria-label="Join the early access list">
+        <label class="t-callout" for="email-a" hidden>Email address</label>
+        <input class="field t-body" id="email-a" type="email" placeholder="you@example.com" autocomplete="email" required>
+        <button class="btn btn-primary t-body t-strong" type="submit">Get early access</button>
+      </form>
+      <p class="form-note t-footnote">One email when the beta opens. No newsletter.</p>
+      <a class="link t-body" href="https://github.com/mxrsv/tiny-cli">View source on GitHub ›</a>
+    </div>
+    <div class="stage">
+      <div class="mbp"><div class="mbp-lid"><div class="mbp-screen"><div class="mbp-notch"></div></div></div><div class="mbp-base"></div></div>
+    </div>
+  </main>
+  <script src="specimen.js"></script>
+</body>
+</html>
