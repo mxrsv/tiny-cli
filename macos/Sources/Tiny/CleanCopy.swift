@@ -87,6 +87,8 @@ enum CleanCopy {
         case .owningApp(let name): return "Owner: \(name) (not running)"
         case .owningAppUnknown: return "Owner app unknown"
         case .sensitive: return nil
+        case .simulatorUnavailable(let name, let reason):
+            return "simctl reports \(name) unavailable" + (reason.isEmpty ? "" : ": \(reason)")
         }
     }
 

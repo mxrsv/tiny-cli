@@ -94,6 +94,7 @@ pub enum FfiEvidence {
     OwningApp { name: String },
     OwningAppUnknown,
     Sensitive { reason: String },
+    SimulatorUnavailable { name: String, reason: String },
 }
 
 /// How a category's items come back after a move to Trash. The desktop
@@ -290,6 +291,9 @@ impl From<Evidence> for FfiEvidence {
             Evidence::OwningApp { name } => Self::OwningApp { name },
             Evidence::OwningAppUnknown => Self::OwningAppUnknown,
             Evidence::Sensitive { reason } => Self::Sensitive { reason },
+            Evidence::SimulatorUnavailable { name, reason } => {
+                Self::SimulatorUnavailable { name, reason }
+            }
         }
     }
 }

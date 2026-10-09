@@ -263,7 +263,7 @@ fn discover_one(
             reason: format!("{tool} was not found"),
         }));
     }
-    if let Some(app) = provider.requires_app_quit() {
+    for app in provider.quit_apps() {
         match ctx.app_running(app) {
             Ok(false) => {}
             Ok(true) => {
@@ -708,6 +708,58 @@ mod tests {
             let report = discover_checked(&providers, &ctx, None);
             assert!(
                 matches!(outcome(&report, "tool"), CategoryOutcome::Failed { error } if error.contains("did not finish"))
+            );
+        }
+
+        /// Gated on two apps through `quit_apps`, like the simulator categories.
+        struct TwoApps;
+
+        impl CleanProvider for TwoApps {
+            fn id(&self) -> &'static str {
+                "two-apps"
+            }
+            fn label(&self) -> &'static str {
+                "two-apps"
+            }
+            fn risk(&self) -> RiskLevel {
+                RiskLevel::Safe
+            }
+            fn inclusion_reason(&self) -> String {
+                "fixture".into()
+            }
+            fn quit_apps(&self) -> Vec<&'static str> {
+                vec!["Xcode", "Simulator"]
+            }
+            fn discover(&self, _: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+                Ok(Vec::new())
+            }
+            fn execute(&self, _: &[CleanItem], _: ExecAction) -> Result<ExecReport> {
+                unreachable!("discovery tests never execute")
+            }
+        }
+
+        #[test]
+        fn any_running_quit_app_refuses_the_category() {
+            let providers: Vec<Box<dyn CleanProvider>> = vec![Box::new(TwoApps)];
+            for app in ["Xcode", "Simulator"] {
+                let running = MockChecker::with_running([app]);
+                let ctx = ScanContext::new(None, &running);
+                let report = discover_checked(&providers, &ctx, None);
+                assert!(
+                    matches!(outcome(&report, "two-apps"), CategoryOutcome::AppRunning { app: a } if a == app),
+                    "{app}"
+                );
+            }
+            let idle = MockChecker::none();
+            let ctx = ScanContext::new(None, &idle);
+            let report = discover_checked(&providers, &ctx, None);
+            assert!(matches!(
+                outcome(&report, "two-apps"),
+                CategoryOutcome::Found { .. }
+            ));
+            assert_eq!(
+                TwoApps.item_apps(Path::new("/x")),
+                vec!["Xcode", "Simulator"]
             );
         }
 

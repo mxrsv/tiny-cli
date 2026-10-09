@@ -29,6 +29,7 @@ pub mod python_caches;
 pub mod quarantine;
 pub mod rust_targets;
 pub mod screenshots_old;
+pub mod simulator_devices;
 pub mod streaming_caches;
 pub mod time_machine_local;
 pub mod trash;
@@ -74,7 +75,7 @@ pub fn category_family(category_id: &str) -> Family {
         "cargo" | "npm" | "pnpm" | "yarn" => Family::Dev,
         "node-modules" | "python-caches" | "rust-targets" => Family::Dev,
         "gradle-maven" | "jetbrains" | "vscode" => Family::Dev,
-        "ios-simulators" | "android-sdk" => Family::Dev,
+        "ios-simulators" | "simulator-devices" | "android-sdk" => Family::Dev,
         "go-cache" | "docker" | "docker-volumes" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
         // UserStorage family
@@ -114,7 +115,9 @@ pub fn comes_back(category_id: &str) -> Option<ComesBack> {
             Some(ComesBack::TrashOnly)
         }
         "app-orphans" => Some(ComesBack::TrashOnly),
-        "time-machine-local" | "trash" | "docker-volumes" => Some(ComesBack::NotRecoverable),
+        "time-machine-local" | "trash" | "docker-volumes" | "simulator-devices" => {
+            Some(ComesBack::NotRecoverable)
+        }
         _ => None,
     }
 }
@@ -131,6 +134,12 @@ pub trait CleanProvider {
     /// `None` means no app gating.
     fn requires_app_quit(&self) -> Option<&'static str> {
         None
+    }
+
+    /// Every process name that must NOT be running before discover/execute:
+    /// `requires_app_quit`, unless the provider gates on more than one app.
+    fn quit_apps(&self) -> Vec<&'static str> {
+        self.requires_app_quit().into_iter().collect()
     }
 
     /// Returns false when the provider is fundamentally unavailable on this
@@ -172,10 +181,7 @@ pub trait CleanProvider {
 
     /// Apps that must not be running when `path` is acted on.
     fn item_apps(&self, _path: &Path) -> Vec<String> {
-        self.requires_app_quit()
-            .into_iter()
-            .map(String::from)
-            .collect()
+        self.quit_apps().into_iter().map(String::from).collect()
     }
 
     /// Provider-specific guard re-checked immediately before acting on
@@ -249,6 +255,9 @@ pub fn all_providers_with(
         Box::new(jetbrains::JetBrains),
         Box::new(vscode::VsCode),
         Box::new(ios_simulators::IosSimulators),
+        Box::new(simulator_devices::SimulatorDevices::with_runner(
+            runner.clone(),
+        )),
         Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
         Box::new(go_cache::GoCache::with_runner(runner.clone())),
         Box::new(docker::Docker::with_runner(runner.clone())),
@@ -297,6 +306,7 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "jetbrains",
         "vscode",
         "ios-simulators",
+        "simulator-devices",
         "android-sdk",
         "go-cache",
         "docker",
@@ -505,6 +515,8 @@ mod tests {
         ("jetbrains", None),
         ("vscode", None),
         ("ios-simulators", None),
+        // Destructive: `xcrun simctl delete` removes the device for good.
+        ("simulator-devices", Some(ReportOnly::Destructive)),
         ("android-sdk", None),
         ("go-cache", None),
         // Runs `docker image prune` / `docker builder prune`, not a per-path move.

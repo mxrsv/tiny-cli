@@ -8,13 +8,16 @@ use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "ios-simulators";
-const LABEL: &str = "iOS Simulator caches/devices";
-const APP: &str = "Xcode";
+const LABEL: &str = "iOS Simulator caches";
 
-const SIM_DIRS: &[&str] = &[
-    "Library/Developer/CoreSimulator/Caches",
-    "Library/Developer/CoreSimulator/Devices",
-];
+/// Apps that use CoreSimulator data; both simulator categories wait for
+/// them to quit.
+pub(super) const SIMULATOR_APPS: &[&str] = &["Xcode", "Simulator"];
+
+/// Devices are not listed here: removing one is `xcrun simctl delete`
+/// (`simulator-devices`), and `Devices/` also holds `device_set.plist`,
+/// the registry CoreSimulator reads to list devices.
+const CACHES_DIR: &str = "Library/Developer/CoreSimulator/Caches";
 
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
@@ -30,7 +33,7 @@ impl CleanProvider for IosSimulators {
         LABEL
     }
     fn inclusion_reason(&self) -> String {
-        "Simulator caches and devices Xcode can recreate".into()
+        "Simulator caches in CoreSimulator/Caches that Xcode recreates".into()
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
@@ -38,35 +41,25 @@ impl CleanProvider for IosSimulators {
     fn desktop_trash_paths(&self) -> bool {
         true
     }
-    fn requires_app_quit(&self) -> Option<&'static str> {
-        Some(APP)
+    fn quit_apps(&self) -> Vec<&'static str> {
+        SIMULATOR_APPS.to_vec()
     }
     fn available(&self) -> bool {
-        let h = match home() {
-            Some(h) => h,
-            None => return false,
-        };
-        SIM_DIRS.iter().any(|s| h.join(s).is_dir())
+        home().is_some_and(|h| is_dir_safe(&h.join(CACHES_DIR)))
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
-        let h = match home() {
-            Some(h) => h,
-            None => return Ok(Vec::new()),
-        };
-        Ok(SIM_DIRS
-            .iter()
-            .flat_map(|sub| simulator_entries(ctx, &h.join(sub)))
-            .collect())
+        Ok(home()
+            .map(|h| simulator_caches(ctx, &h))
+            .unwrap_or_default())
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
     }
 }
 
-/// Folders directly inside `root`. Files are skipped: `Devices/` also holds
-/// `device_set.plist`, the registry CoreSimulator reads to list devices.
-fn simulator_entries(ctx: &ScanContext<'_>, root: &Path) -> Vec<CleanItem> {
-    top_level_entries(ctx, root, ID, LABEL, RiskLevel::Review)
+/// Folders directly inside `home`'s `CoreSimulator/Caches`.
+fn simulator_caches(ctx: &ScanContext<'_>, home: &Path) -> Vec<CleanItem> {
+    top_level_entries(ctx, &home.join(CACHES_DIR), ID, LABEL, RiskLevel::Review)
         .into_iter()
         .filter(|item| is_dir_safe(&item.path))
         .collect()
@@ -78,15 +71,18 @@ mod tests {
     use crate::clean::providers::known_category_ids;
 
     #[test]
-    fn device_registry_plist_is_never_a_candidate() {
-        let root = std::env::temp_dir().join(format!("tiny-sim-{}", std::process::id()));
-        let device = root.join("01DADBA3-1A21-4914-A093-29B4D0D7B9C8");
+    fn only_caches_are_candidates_never_devices() {
+        let home = std::env::temp_dir().join(format!("tiny-sim-{}", std::process::id()));
+        let sim = home.join("Library/Developer/CoreSimulator");
+        let device = sim.join("Devices/01DADBA3-1A21-4914-A093-29B4D0D7B9C8");
+        let cache = sim.join("Caches/dyld");
         std::fs::create_dir_all(&device).unwrap();
-        std::fs::write(root.join("device_set.plist"), b"<plist/>").unwrap();
-        let items = simulator_entries(&ScanContext::unchecked(), &root);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(sim.join("Devices/device_set.plist"), b"<plist/>").unwrap();
+        let items = simulator_caches(&ScanContext::unchecked(), &home);
         let paths: Vec<_> = items.into_iter().map(|i| i.path).collect();
-        assert_eq!(paths, vec![device]);
-        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+        assert_eq!(paths, vec![cache]);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&home);
     }
 
     #[test]
@@ -95,8 +91,9 @@ mod tests {
     }
 
     #[test]
-    fn ios_simulators_gates_xcode() {
+    fn ios_simulators_gates_xcode_and_simulator() {
         let p = IosSimulators;
-        assert_eq!(p.requires_app_quit(), Some("Xcode"));
+        assert_eq!(p.quit_apps(), vec!["Xcode", "Simulator"]);
+        assert_eq!(p.item_apps(Path::new("/x")), vec!["Xcode", "Simulator"]);
     }
 }

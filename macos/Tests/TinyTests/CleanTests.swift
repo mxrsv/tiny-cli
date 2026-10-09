@@ -370,6 +370,10 @@ import TinyEngine
         try check(CleanCopy.evidenceLine([.modified(at: may4), .lastOpened(at: may4)], in: utc) == "Modified 4 May 2026 · Last opened 4 May 2026", "download evidence line")
         try check(CleanCopy.evidenceLine([.owningApp(name: "Code")]) == "Owner: Code (not running)", "owning app")
         try check(CleanCopy.evidenceLine([.owningAppUnknown]) == "Owner app unknown", "owner unknown")
+        try check(CleanCopy.evidenceLine([.simulatorUnavailable(name: "iPhone 15", reason: "runtime profile not found")])
+                  == "simctl reports iPhone 15 unavailable: runtime profile not found", "simulator device")
+        try check(CleanCopy.evidenceLine([.simulatorUnavailable(name: "iPad", reason: "")]) == "simctl reports iPad unavailable",
+                  "simulator device without a reason")
         try check(CleanCopy.evidenceLine([.venvMarker]) == "Has pyvenv.cfg" && CleanCopy.evidenceLine([.notGitRepo]) == "Not in a git repository", "marker facts")
         try check(CleanCopy.evidenceLine([.sensitive(reason: "recovery codes")]) == nil, "a sensitive fact is a warning, not part of the line")
         let private1 = candidate("p", evidence: [.modified(at: may4), .sensitive(reason: "recovery codes")])

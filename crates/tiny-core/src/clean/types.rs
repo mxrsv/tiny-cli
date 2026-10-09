@@ -57,6 +57,9 @@ pub enum Evidence {
     OwningAppUnknown,
     /// The name looks like private data (keys, recovery codes, ...).
     Sensitive { reason: String },
+    /// `xcrun simctl` reports the simulator device unavailable, with its
+    /// `availabilityError` (empty when simctl gave none).
+    SimulatorUnavailable { name: String, reason: String },
 }
 
 /// How a category's items come back after they are moved to the Trash.
