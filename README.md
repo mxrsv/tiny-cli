@@ -63,8 +63,8 @@ are invisible, so an empty list never means a port is free.
 
 The **Clean** destination in the dock scans cleanup categories read-only and shows
 them as tiles: green is safe, orange needs review and is never selected for you, and
-report-only categories (Docker prune, Time Machine snapshots, Trash, orphaned
-Application Support folders) stay in the CLI. **Review…** lists every path, asks Rust
+report-only categories (Docker prune, Time Machine snapshots, Trash) stay in the
+CLI; orphaned Application Support folders are only reported, in the CLI too. **Review…** lists every path, asks Rust
 for a preview that expires after 15 minutes, and refuses a folder that would carry an
 unselected review item. **Move to Trash** asks for confirmation, then moves each item
 through Finder so Put Back works, revalidating it immediately before the move, and
