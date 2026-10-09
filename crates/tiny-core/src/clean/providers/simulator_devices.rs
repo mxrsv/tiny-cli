@@ -26,6 +26,7 @@ const LABEL: &str = "Unavailable iOS Simulator devices";
 /// Absolute: a Finder-launched app has a minimal `PATH`.
 const XCRUN: &str = "/usr/bin/xcrun";
 const LIST_ARGS: &[&str] = &["simctl", "list", "devices", "-j"];
+const FIND_ARGS: &[&str] = &["--find", "simctl"];
 const DEVICES_DIR: &str = "Library/Developer/CoreSimulator/Devices";
 /// Hex digits per dash-separated group of a UDID.
 const UDID_GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
@@ -57,6 +58,10 @@ pub struct SimulatorDevices {
 impl SimulatorDevices {
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
         Self { runner }
+    }
+
+    fn simctl_found(&self) -> bool {
+        run_tool(self.runner.as_ref(), XCRUN, FIND_ARGS).is_ok_and(|out| out.success())
     }
 
     /// Unavailable devices whose folder exists under `devices_root`. The
@@ -124,8 +129,17 @@ impl CleanProvider for SimulatorDevices {
     fn quit_apps(&self) -> Vec<&'static str> {
         SIMULATOR_APPS.to_vec()
     }
+    /// Without a Devices folder there is nothing to offer and discovery
+    /// spawns nothing; with one, `simctl` must exist (a Mac with only the
+    /// Command Line Tools has `xcrun` but not `simctl`).
     fn available(&self) -> bool {
-        home().is_some_and(|h| is_dir_safe(&h.join(DEVICES_DIR)))
+        match home() {
+            Some(h) if is_dir_safe(&h.join(DEVICES_DIR)) => self.simctl_found(),
+            _ => true,
+        }
+    }
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("simctl")
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
         match home() {
@@ -260,6 +274,16 @@ mod tests {
             .unwrap();
         assert!(items.is_empty());
         assert!(runner.output_calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_missing_simctl_is_reported_as_a_missing_tool() {
+        let missing = MockRunner::new().with_exit(XCRUN, FIND_ARGS, 72, "");
+        assert!(!SimulatorDevices::with_runner(Arc::new(missing)).simctl_found());
+        let found = MockRunner::new().with_exit(XCRUN, FIND_ARGS, 0, "/usr/bin/simctl\n");
+        let p = SimulatorDevices::with_runner(Arc::new(found));
+        assert!(p.simctl_found());
+        assert_eq!(p.required_tool(), Some("simctl"));
     }
 
     #[test]

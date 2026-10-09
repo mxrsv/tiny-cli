@@ -79,6 +79,10 @@ One commit per task; T1 lands before T2–T6 use it.
   `com.apple.*`; `simulator-devices` fails here with "unable to find utility simctl"
   (Command Line Tools only), which the CLI drops, so its rule is covered only by MockRunner
   fixtures.
+- 2026-10-10: a Mac with a Devices folder but no `simctl` now reports `simulator-devices`
+  as Unavailable ("simctl was not found", via `xcrun --find simctl`) instead of a failed
+  scan, like a missing `docker`. Gate: core/ffi 273 + 38, `tiny` 19 + 3 + 11 + 1, clippy
+  `--workspace`, fmt, `test-native.sh` 34 checks.
 
 ## Handoff
 
