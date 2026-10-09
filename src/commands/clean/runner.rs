@@ -60,10 +60,12 @@ pub mod test_support {
     use std::sync::Mutex;
 
     /// Maps `(bin, args.join(" "))` to `(success, stdout)`. Unknown
-    /// invocations return `(false, "")`.
+    /// invocations return `(false, "")`. Every `run` key is recorded in
+    /// `calls`.
     pub struct MockRunner {
         pub which_set: Mutex<Vec<String>>,
         pub responses: Mutex<HashMap<String, (bool, String)>>,
+        pub calls: Mutex<Vec<String>>,
     }
 
     impl MockRunner {
@@ -71,6 +73,7 @@ pub mod test_support {
             Self {
                 which_set: Mutex::new(Vec::new()),
                 responses: Mutex::new(HashMap::new()),
+                calls: Mutex::new(Vec::new()),
             }
         }
         pub fn with_which(self, bin: &str) -> Self {
@@ -93,6 +96,7 @@ pub mod test_support {
         }
         fn run(&self, bin: &str, args: &[&str]) -> CommandOutput {
             let key = format!("{} {}", bin, args.join(" "));
+            self.calls.lock().unwrap().push(key.clone());
             match self.responses.lock().unwrap().get(&key) {
                 Some((success, stdout)) => CommandOutput {
                     success: *success,
