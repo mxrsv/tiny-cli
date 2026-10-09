@@ -1,5 +1,7 @@
 # Triển khai Tiny desktop
 
+> Lịch sử (2026-10-09): bản Tauri/React mô tả dưới đây đã bị gỡ khỏi repo; desktop hiện là app SwiftUI trong `macos/`. Giữ lại làm hồ sơ.
+
 Nguồn: `_bmad-output/planning-artifacts/architecture.md` tại commit `3c7e8a4` trên `origin/main` và MVP slice trong brainstorm ngày 2026-05-07.
 
 ## Phạm vi đã triển khai

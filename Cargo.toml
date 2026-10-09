@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/tiny-core", "crates/tiny", "crates/tiny-ffi", "src-tauri"]
-default-members = ["crates/tiny-core", "crates/tiny", "crates/tiny-ffi", "src-tauri"]
+members = ["crates/tiny-core", "crates/tiny", "crates/tiny-ffi"]
+default-members = ["crates/tiny-core", "crates/tiny", "crates/tiny-ffi"]
 resolver = "2"
 
 [workspace.package]

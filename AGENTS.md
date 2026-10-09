@@ -4,7 +4,6 @@
 
 Rust workspace with a shared [core](crates/tiny-core/src/lib.rs), a
 [CLI](crates/tiny/src/main.rs), and a native [SwiftUI app](macos/Sources/Tiny/TinyApp.swift).
-The existing Tauri source remains a separate reference surface.
 
 ## Common commands
 
