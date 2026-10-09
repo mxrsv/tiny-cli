@@ -61,11 +61,34 @@ One commit per task; T1 lands before T2–T6 use it.
   first (`1baeb67`, `8b4842a`: 145 + 3 tests pass; clippy fails only on six pre-existing
   `sort_by`/division lints in `focus.rs`, `scan/` and `uninstall.rs`). T5, T8–T10 started
   on `feat/clean-trust`.
+- 2026-10-10: T8 `c91e953` (docker = images + build cache, one `image`/`builder prune -af`
+  per selected placeholder, other placeholders refused; destructive `docker-volumes` with
+  `volume prune -af`; MockRunner records `run` calls), T9 `8463af1` (`app-orphans`
+  `execute` refuses every item), T10 `978e531` (vendor table `Google` → `Google Chrome`,
+  `BraveSoftware` → `Brave Browser`; six unprefixed Apple folders dropped), T5 `f4338de`
+  (`ios-simulators` = `CoreSimulator/Caches` only; destructive `simulator-devices` from
+  `simctl list devices -j`, `isAvailable == false` with an existing `Devices/<UDID>`,
+  `xcrun simctl delete <udid>` per item, new `SimulatorUnavailable` evidence in FFI and
+  `CleanCopy`). Both simulator categories gate on Xcode and Simulator through a new
+  `CleanProvider::quit_apps` (defaults to `requires_app_quit`), which discovery checks
+  and the default `item_apps` returns; the single-app `requires_app_quit` could not refuse
+  a category for a second app. README category lists updated. Gate: core/ffi 272 + 38
+  tests, `tiny` 19 + 3 + 11 + 1, clippy `--workspace`, fmt, `test-native.sh` 34 checks.
+  Dry runs (read-only): `user-caches` 59 items with Chrome running, `~/Library/Caches/Google`
+  not offered, `BraveSoftware` offered as owned by Brave Browser, no Apple folder or
+  `com.apple.*`; `simulator-devices` fails here with "unable to find utility simctl"
+  (Command Line Tools only), which the CLI drops, so its rule is covered only by MockRunner
+  fixtures.
 
 ## Handoff
 
+- T5, T8–T10 done on `feat/clean-trust` (commits above); not merged anywhere.
 - Open: whether a dirty work tree with only old edits still blocks the idle rule (SR1
   follow-up).
+- Open: `docker` sizes come from `docker system df` `Size`, not `Reclaimable`, so a tile
+  counts in-use images too; and Docker/Time Machine placeholders carry no evidence fact,
+  which AC3 ("at least one fact") does not yet cover.
+- Unchecked: `simulator-devices` against a real `xcrun simctl` (this Mac has no Xcode).
 - AC4 pending: approved in one round with the layout from the
   [clean categories spec](../specs/2026-10-10-clean-categories.md). Merge into `feat/native-desktop` needs the
   user's go-ahead; another session has uncommitted Clean UI changes there.
