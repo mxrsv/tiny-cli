@@ -81,7 +81,7 @@ struct AppActionBar: View {
                 Menu { ActionItems.bundleItems(group) } label: { Image(systemName: "ellipsis") }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .accessibilityLabel("More actions for \(group.name)")
-            }.controlSize(.small)
+            }.controlSize(.small).buttonStyle(.tiny(.secondary))
             if let reason = resolution.reason { Text(reason).font(.caption2).foregroundStyle(.secondary) }
         }
     }
@@ -98,16 +98,19 @@ struct ProcessActionBar: View {
         let quitDisabled = blocked != nil || actions.isRunning
         let path = Finder.existing(process.executablePath)
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Button("Quit") { actions.request(process, kind: .graceful) }.disabled(quitDisabled)
                 Button("Force Quit…") { actions.request(process, kind: .force) }.disabled(quitDisabled)
+                    .buttonStyle(.tiny(.destructive))
                 Spacer(minLength: 0)
                 Button { path.map(Finder.reveal) } label: { Image(systemName: "folder") }
+                    .buttonStyle(.tiny(.ghost, icon: true))
                     .disabled(path == nil).help(path == nil ? "Executable path unavailable" : "Reveal executable in Finder")
                     .accessibilityLabel("Reveal executable in Finder")
                 Button { Finder.copy(String(process.pid)) } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.tiny(.ghost, icon: true))
                     .help("Copy PID \(process.pid)").accessibilityLabel("Copy PID")
-            }.controlSize(.small)
+            }.controlSize(.small).buttonStyle(.tiny(.secondary))
             if let blocked { Text(blocked).font(.caption2).foregroundStyle(.secondary) }
         }
     }
@@ -123,7 +126,7 @@ struct NoticeBanner: View {
             Image(systemName: symbol).foregroundStyle(tint).accessibilityHidden(true)
             Text(notice.text).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Button("Dismiss", action: dismiss).buttonStyle(.borderless)
+            Button("Dismiss", action: dismiss).buttonStyle(.tiny(.ghost)).controlSize(.small)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))

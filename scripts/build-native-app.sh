@@ -14,6 +14,16 @@ BIN="$(swift build --package-path "$ROOT/macos" -c release ${SMOKE_FLAGS[@]+"${S
 APP="$ROOT/macos/.build/Tiny Dev.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN/Tiny" "$APP/Contents/MacOS/Tiny"
+# Lottie ships as a dynamic framework (lottie-spm), so the bundle must carry it.
+mkdir -p "$APP/Contents/Frameworks"
+rm -rf "$APP/Contents/Frameworks/Lottie.framework"
+ditto "$BIN/Lottie.framework" "$APP/Contents/Frameworks/Lottie.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Tiny"
+codesign --force --sign - "$APP/Contents/Frameworks/Lottie.framework"
+# SwiftPM resources (Lottie animations); MovedToTrashMark looks for them here.
+mkdir -p "$APP/Contents/Resources"
+rm -rf "$APP/Contents/Resources/TinyNative_Tiny.bundle"
+ditto "$BIN/TinyNative_Tiny.bundle" "$APP/Contents/Resources/TinyNative_Tiny.bundle"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

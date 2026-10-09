@@ -9,7 +9,10 @@ struct CleanReportView: View {
         let sections = ReportSections(report)
         Tile {
             VStack(alignment: .leading, spacing: 14) {
-                Text(CleanCopy.summary(report)).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                HStack(spacing: 14) {
+                    if report.movedCount > 0 { MovedToTrashMark() }
+                    Text(CleanCopy.summary(report)).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                }
                 Text("Items in the Trash still use disk space until the Trash is emptied. Put Back in Finder restores them.")
                     .font(.callout).foregroundStyle(.secondary)
                 if let stopped = CleanCopy.stopped(report.stopped) {

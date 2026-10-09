@@ -24,10 +24,10 @@ struct CleanReviewSheet: View {
             .frame(minHeight: 220)
             previewSection
             HStack {
-                Button("Cancel") { clean.reviewing = false }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { clean.reviewing = false }.keyboardShortcut(.cancelAction).buttonStyle(.tiny(.secondary))
                 Spacer()
                 Button(moveTitle) { confirm() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.tiny(.primary))
                     .disabled(clean.preview == nil || clean.previewLoading || clean.preview?.items.isEmpty == true)
             }
         }
@@ -98,6 +98,7 @@ struct CleanReviewSheet: View {
                 HStack {
                     Text(clean.error == nil ? "The selection changed." : "Change the selection to try again.").foregroundStyle(.secondary)
                     Button("Update Preview") { clean.requestPreview() }.disabled(!clean.canUpdatePreview)
+                        .buttonStyle(.tiny(.secondary)).controlSize(.small)
                 }
             }
         }

@@ -6,8 +6,80 @@ enum Theme {
     static let accent = Color(red: 0.48, green: 0.91, blue: 0.63)
     static let radius: CGFloat = 22
     static let gap: CGFloat = 14
+    static let danger = Color(red: 1, green: 0.45, blue: 0.42)
     static func number(_ size: CGFloat) -> Font {
         .system(size: size, weight: .semibold, design: .rounded).monospacedDigit()
+    }
+
+    /// Motion tokens from docs/DESIGN-LANGUAGE.md.
+    enum Motion {
+        static let quick = Animation.timingCurve(0.22, 0.8, 0.24, 1, duration: 0.2)
+    }
+}
+
+/// The app's button variants. Menus, alerts and pickers stay native.
+struct TinyButtonStyle: ButtonStyle {
+    enum Variant { case primary, secondary, destructive, ghost }
+    var variant: Variant
+    /// Square, label-less button with the same height as a text button.
+    var icon = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        Surface(configuration: configuration, variant: variant, icon: icon)
+    }
+
+    private struct Surface: View {
+        let configuration: Configuration
+        let variant: Variant
+        let icon: Bool
+        @Environment(\.isEnabled) private var enabled
+        @Environment(\.controlSize) private var controlSize
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var hovering = false
+
+        var body: some View {
+            let small = controlSize == .small || controlSize == .mini
+            let height: CGFloat = small ? 26 : 30
+            configuration.label
+                .font(.system(size: small ? 11.5 : 12.5, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(foreground)
+                .padding(.horizontal, icon ? 0 : (small ? 11 : 14))
+                .frame(width: icon ? height : nil, height: height)
+                .background(fill, in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(variant == .secondary ? 0.07 : 0)))
+                .contentShape(Capsule())
+                .opacity(enabled ? 1 : 0.4)
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
+                .onHover { hovering = $0 && enabled }
+                .animation(Theme.Motion.quick, value: configuration.isPressed)
+                .animation(Theme.Motion.quick, value: hovering)
+        }
+
+        private var foreground: Color {
+            switch variant {
+            case .primary: return .black.opacity(0.85)
+            case .secondary: return .primary
+            case .destructive: return Theme.danger
+            case .ghost: return hovering ? .primary : .secondary
+            }
+        }
+
+        private var fill: Color {
+            let lift = (hovering ? 1 : 0) + (configuration.isPressed ? 1 : 0)
+            switch variant {
+            case .primary: return Theme.accent.opacity(1 - Double(lift) * 0.12)
+            case .secondary: return .white.opacity(0.08 + Double(lift) * 0.05)
+            case .destructive: return Theme.danger.opacity(0.13 + Double(lift) * 0.07)
+            case .ghost: return .white.opacity(Double(lift) * 0.07)
+            }
+        }
+    }
+}
+
+extension ButtonStyle where Self == TinyButtonStyle {
+    static func tiny(_ variant: TinyButtonStyle.Variant, icon: Bool = false) -> TinyButtonStyle {
+        TinyButtonStyle(variant: variant, icon: icon)
     }
 }
 

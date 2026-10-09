@@ -8,6 +8,9 @@ let package = Package(
     name: "TinyNative",
     platforms: [.macOS(.v14)],
     products: [.executable(name: "Tiny", targets: ["Tiny"])],
+    dependencies: [
+        .package(url: "https://github.com/airbnb/lottie-spm.git", from: "4.6.1")
+    ],
     targets: [
         .systemLibrary(name: "tiny_ffiFFI", path: "Generated"),
         .target(name: "TinyEngine", dependencies: ["tiny_ffiFFI"], linkerSettings: [
@@ -16,6 +19,9 @@ let package = Package(
             .linkedLibrary("objc"), .linkedLibrary("iconv"),
             .linkedLibrary("System"), .linkedLibrary("c"), .linkedLibrary("m")
         ]),
-        .executableTarget(name: "Tiny", dependencies: ["TinyEngine"])
+        .executableTarget(name: "Tiny", dependencies: [
+            "TinyEngine",
+            .product(name: "Lottie", package: "lottie-spm")
+        ], resources: [.copy("Resources/moved-to-trash.json")])
     ]
 )

@@ -23,7 +23,7 @@ struct Dock: View {
             if state.screen == .clean { cleanControls } else { activityControls }
         }
         .font(.system(size: 12))
-        .buttonStyle(.bordered)
+        .buttonStyle(.tiny(.secondary))
         .padding(.horizontal, 18).padding(.vertical, 12)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.10)))

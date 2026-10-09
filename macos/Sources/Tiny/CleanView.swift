@@ -59,7 +59,7 @@ struct CleanView: View {
             Text("Review-risk items are never selected for you.").font(.caption).foregroundStyle(.secondary)
             Spacer()
             Button("Review…") { clean.openReview() }
-                .buttonStyle(.borderedProminent).disabled(!clean.canReview)
+                .buttonStyle(.tiny(.primary)).disabled(!clean.canReview)
                 .help(clean.canReview ? "Review each path before anything moves" : "Select items, or scan again")
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
@@ -79,7 +79,7 @@ struct CleanView: View {
                     ProgressView().controlSize(.small)
                     Text(clean.progress?.message ?? "Starting…").font(.caption).foregroundStyle(.secondary)
                 }
-                Button(clean.phase == .executing ? "Stop" : "Cancel Scan") { clean.cancel() }
+                Button(clean.phase == .executing ? "Stop" : "Cancel Scan") { clean.cancel() }.buttonStyle(.tiny(.secondary))
                 Text(clean.phase == .executing ? "Stopping finishes the current item; the rest are not attempted."
                      : "Cancelling changes nothing.").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: 520, alignment: .leading)
@@ -93,7 +93,7 @@ struct CleanView: View {
                 Text(title).font(.system(size: 22, weight: .semibold, design: .rounded))
                 Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 460)
                 Button { clean.scan() } label: { Label("Scan", systemImage: "magnifyingglass") }
-                    .buttonStyle(.borderedProminent).disabled(clean.isBusy)
+                    .buttonStyle(.tiny(.primary)).disabled(clean.isBusy)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
