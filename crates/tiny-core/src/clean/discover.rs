@@ -236,10 +236,7 @@ pub fn discover_checked(
             Some(Err(outcome)) => outcome,
             None => continue,
         };
-        if matches!(&outcome, CategoryOutcome::Found { items, unreadable, refused, .. } if items.is_empty() && unreadable.is_empty() && refused.is_empty())
-        {
-            continue;
-        }
+        // Empty categories stay: the desktop lists what was checked and found nothing.
         categories.push(CheckedCategory {
             id: provider.id().to_string(),
             label: provider.label().to_string(),
@@ -633,6 +630,18 @@ mod tests {
                 other => panic!("unexpected {other:?}"),
             }
             let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+        }
+
+        #[test]
+        fn a_category_that_finds_nothing_is_still_reported() {
+            let missing = std::env::temp_dir().join("tiny-discover-nothing-here-missing");
+            let providers: Vec<Box<dyn CleanProvider>> =
+                vec![Box::new(Fixture::new("empty", &missing))];
+            let ctx = ScanContext::unchecked();
+            let report = discover_checked(&providers, &ctx, None);
+            assert!(
+                matches!(outcome(&report, "empty"), CategoryOutcome::Found { items, .. } if items.is_empty())
+            );
         }
 
         #[test]

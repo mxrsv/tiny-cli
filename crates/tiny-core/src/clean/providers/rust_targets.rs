@@ -41,7 +41,7 @@ impl CleanProvider for RustTargets {
         LABEL
     }
     fn inclusion_reason(&self) -> String {
-        format!("Rust target/ folders whose Cargo.toml is untouched for {} days; cargo build restores them", self.idle_days)
+        format!("Rust target/ folders in projects with no edits, commits or uncommitted changes for {} days; cargo build restores them", self.idle_days)
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review

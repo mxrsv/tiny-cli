@@ -151,11 +151,12 @@ final class CleanState {
         }
     }
 
-    /// Categories with another status (app running, unavailable, failed) keep their
-    /// tile: they tell the user what was skipped and why.
+    /// Categories with another status (app running, unavailable, failed), unreadable
+    /// entries or refused paths keep their tile: they tell the user what was skipped and why.
     static func layout(_ categories: [FfiCleanCategory]) -> Layout {
         let empty = { (category: FfiCleanCategory) in
             category.desktopAction == .moveToTrash && category.status == .found && category.candidates.isEmpty
+                && category.unreadable.isEmpty && category.refused.isEmpty
         }
         let shown = categories.filter { !empty($0) }
         let sections = Group.allCases.map { group in GroupSection(group: group, categories: shown.filter { self.group(of: $0) == group }) }

@@ -44,7 +44,7 @@ impl CleanProvider for PythonCaches {
     }
     fn inclusion_reason(&self) -> String {
         format!(
-            "__pycache__ folders, and virtualenvs whose project manifest is untouched for {} days",
+            "__pycache__ folders, and virtualenvs in projects with no edits, commits or uncommitted changes for {} days",
             self.idle_days
         )
     }

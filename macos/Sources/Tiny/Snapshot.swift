@@ -13,8 +13,8 @@ extension Main {
         let markers = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-snapshot-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: markers) }
         if scene == .notice { try InFlightMarker(directory: markers).begin(UUID(), summary: "Force Quit “sleep” (PID 4242)") }
-        if scene == .clean || scene == .review || scene == .reviewFixture {
-            try await renderFixtureClean(scene, markers: markers, to: url)
+        if scene == .reviewFixture {
+            try await renderFixtureReview(markers: markers, to: url)
             return
         }
         if scene == .report {
@@ -34,8 +34,8 @@ extension Main {
         guard state.listError == nil, !state.processes.isEmpty else {
             throw NSError(domain: "Tiny", code: 4, userInfo: [NSLocalizedDescriptionKey: state.listError ?? "No process data"])
         }
-        if scene == .cleanAll {
-            try await renderClean(state, to: url)
+        if scene == .clean || scene == .cleanAll || scene == .review {
+            try await renderClean(state, scene: scene, to: url)
             return
         }
         let ownPID = UInt32(ProcessInfo.processInfo.processIdentifier)
@@ -54,44 +54,52 @@ extension Main {
         print("Rendered \(state.processes.count) live processes to \(url.path)")
     }
 
-    /// Fixture data (`DisplayCleanEngine`) through the real screens: nothing is scanned or moved.
-    @MainActor private static func renderFixtureClean(_ scene: SnapshotScene, markers: URL, to url: URL) async throws {
+    /// Fixture data (`DisplayCleanEngine`) through the real review sheet: nothing is scanned or moved.
+    @MainActor private static func renderFixtureReview(markers: URL, to url: URL) async throws {
         let actions = ActionState(terminate: { _, _ in .alreadyExited }, quitApp: { _ in .alreadyExited },
                                   marker: InFlightMarker(directory: markers))
         let clean = CleanState(engine: DisplayCleanEngine(), actions: actions)
         await clean.scan()?.value
-        switch scene {
-        case .clean:
-            try await render(CleanView(clean: clean, actions: actions).padding(26).background(Backdrop()),
-                             size: NSSize(width: 1188, height: 1340), to: url)
-            print("Rendered the grouped Clean screen with fixture data to \(url.path)")
-        case .review:
-            // Stage a mix: git, owner and venv evidence, and the private-looking file ticked by hand.
-            for id in ["rust-a", "rust-b", "node-a", "cache-old", "diagnostic", "claude", "a-ips", "b-ips"] { clean.toggle(candidate: id) }
-            for id in ["venv-a", "dl-installer", "dl-recovery"] { clean.toggle(candidate: id) }
-            await clean.requestPreview()?.value
-            try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
-                             size: NSSize(width: 680, height: 600), to: url)
-            print("Rendered the review sheet with evidence (fixture data) to \(url.path)")
-        default:
-            clean.toggle(candidate: "jetbrains")
-            clean.toggle(candidate: "b-ips")
-            await clean.requestPreview()?.value
-            try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
-                             size: NSSize(width: 680, height: 600), to: url)
-            print("Rendered the review sheet with fixture data to \(url.path)")
-        }
+        clean.toggle(candidate: "jetbrains")
+        clean.toggle(candidate: "b-ips")
+        for id in ["rust-a", "node-a", "venv-a", "cache-old", "dl-installer", "dl-recovery"] { clean.toggle(candidate: id) }
+        await clean.requestPreview()?.value
+        try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
+                         size: NSSize(width: 680, height: 600), to: url)
+        print("Rendered the review sheet with fixture data to \(url.path)")
     }
 
-    /// Real, read-only discovery of every category, tall enough to show all tiles.
-    @MainActor private static func renderClean(_ state: AppState, to url: URL) async throws {
+    /// Real, read-only discovery; the review scene also asks Rust for a real preview.
+    @MainActor private static func renderClean(_ state: AppState, scene: SnapshotScene, to url: URL) async throws {
         state.screen = .clean
         await state.clean.scan()?.value
         guard state.clean.phase == .ready else {
             throw NSError(domain: "Tiny", code: 10, userInfo: [NSLocalizedDescriptionKey: state.clean.error?.message ?? "Scan failed"])
         }
-        try await render(ProcessesView(state: state, startsPolling: false), size: NSSize(width: 1240, height: 2400), to: url)
-        print("Rendered \(state.clean.categories.count) cleanup categories to \(url.path)")
+        guard scene == .review else {
+            // `clean-all` is tall enough to show every tile, including report-only ones.
+            let height: CGFloat = scene == .cleanAll ? 2400 : 850
+            try await render(ProcessesView(state: state, startsPolling: false), size: NSSize(width: 1240, height: height), to: url)
+            print("Rendered \(state.clean.categories.count) cleanup categories to \(url.path)")
+            return
+        }
+        // Stage, never run: tick a safe folder that holds a review item, if real data has one,
+        // so the sheet shows Rust's PC-C3 exclusion next to "moves with" rows, plus the first
+        // item of each movable category so its evidence shows.
+        let selectable = state.clean.categories.filter(CleanState.isSelectable)
+        let all = selectable.flatMap(\.candidates)
+        if let carrier = all.first(where: { item in
+            item.risk == .safe && all.contains { $0.risk != .safe && $0.id != item.id && CleanState.contains(item.path, $0.path) }
+        }) {
+            state.clean.toggle(candidate: carrier.id)
+        }
+        for first in selectable.compactMap(\.candidates.first) where !state.clean.selection.contains(first.id) {
+            state.clean.toggle(candidate: first.id)
+        }
+        await state.clean.requestPreview()?.value
+        try await render(CleanReviewSheet(clean: state.clean, actions: state.actions).background(Theme.tile),
+                         size: NSSize(width: 680, height: 600), to: url)
+        print("Rendered a preview of \(state.clean.preview?.items.count ?? 0) items to \(url.path)")
     }
 
     @MainActor private static func render(_ view: some View, size: NSSize, to url: URL) async throws {

@@ -109,7 +109,7 @@ impl CleanProvider for DownloadsOld {
     }
     fn inclusion_reason(&self) -> String {
         format!(
-            "Files directly in Downloads not modified for {} days",
+            "Files directly in Downloads neither modified nor opened for {} days",
             self.idle_days
         )
     }
