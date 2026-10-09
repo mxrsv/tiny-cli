@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::error::Result;
 
@@ -6,6 +7,7 @@ use super::{execute_per_item, is_idle, CleanProvider};
 use crate::clean::fs_safe::{dir_size_checked, is_dir_safe, list_children};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
+use crate::runner::{CommandRunner, RealRunner};
 
 const ID: &str = "downloads-old";
 const LABEL: &str = "Downloads (old files)";
@@ -16,11 +18,17 @@ fn home() -> Option<PathBuf> {
 
 pub struct DownloadsOld {
     pub idle_days: u64,
+    #[allow(dead_code)] // read by the last-opened lookup (plan T3)
+    runner: Arc<dyn CommandRunner>,
 }
 
 impl DownloadsOld {
     pub fn new(idle_days: u64) -> Self {
-        Self { idle_days }
+        Self::with_runner(idle_days, Arc::new(RealRunner))
+    }
+
+    pub fn with_runner(idle_days: u64, runner: Arc<dyn CommandRunner>) -> Self {
+        Self { idle_days, runner }
     }
 }
 
@@ -91,6 +99,7 @@ pub fn list_old_files(ctx: &ScanContext<'_>, dir: &Path, idle_days: u64) -> Vec<
             path,
             size,
             risk: RiskLevel::Review,
+            evidence: Vec::new(),
         });
     }
     out

@@ -399,6 +399,7 @@ mod tests {
                 size: 4,
                 path,
                 risk: RiskLevel::Safe,
+                evidence: Vec::new(),
             },
             roots: vec![root.to_path_buf()],
             covers: Vec::new(),

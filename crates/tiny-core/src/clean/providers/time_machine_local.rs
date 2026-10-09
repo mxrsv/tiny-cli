@@ -81,6 +81,7 @@ impl CleanProvider for TimeMachineLocal {
                 // don't lie to the user. Picker still flags by count.
                 size: 0,
                 risk: RiskLevel::Destructive,
+                evidence: Vec::new(),
             });
         }
         Ok(items)
@@ -253,6 +254,7 @@ mod tests {
             path: PathBuf::from("<tmutil:com.apple.TimeMachine.2025-01-01-000000.local>"),
             size: 0,
             risk: RiskLevel::Destructive,
+            evidence: Vec::new(),
         };
         let report = p.execute(&[item], ExecAction::HardDelete).unwrap();
         assert_eq!(report.removed_paths.len(), 1);
@@ -274,6 +276,7 @@ mod tests {
             path: PathBuf::from("<tmutil:com.apple.TimeMachine.2025-01-01-000000.local>"),
             size: 0,
             risk: RiskLevel::Destructive,
+            evidence: Vec::new(),
         };
         let report = p.execute(&[item], ExecAction::HardDelete).unwrap();
         assert!(report.removed_paths.is_empty());

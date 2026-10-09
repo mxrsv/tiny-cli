@@ -1,15 +1,26 @@
 use crate::error::Result;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::{execute_per_item, CleanProvider};
 use crate::clean::fs_safe::{dir_size_checked, list_children};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
+use crate::runner::CommandRunner;
 
 const ID: &str = "user-caches";
 const LABEL: &str = "User caches";
 
-pub struct UserCaches;
+pub struct UserCaches {
+    #[allow(dead_code)] // read by the bundle-id lookup (plan T4)
+    runner: Arc<dyn CommandRunner>,
+}
+
+impl UserCaches {
+    pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
+        Self { runner }
+    }
+}
 
 impl CleanProvider for UserCaches {
     fn id(&self) -> &'static str {
@@ -73,6 +84,7 @@ fn list_caches(ctx: &ScanContext<'_>, root: &Path) -> Result<Vec<CleanItem>> {
             path,
             size,
             risk: RiskLevel::Review,
+            evidence: Vec::new(),
         });
     }
     Ok(out)

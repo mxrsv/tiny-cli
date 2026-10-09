@@ -100,6 +100,7 @@ impl CleanProvider for Docker {
                     path: PathBuf::from(placeholder),
                     size,
                     risk: RiskLevel::Review,
+                    evidence: Vec::new(),
                 });
             }
         }

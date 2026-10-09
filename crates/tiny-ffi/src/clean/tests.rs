@@ -68,6 +68,7 @@ impl CleanProvider for Fixture {
                 size: dir_size_checked(&path, ctx),
                 path,
                 risk: self.risk,
+                evidence: Vec::new(),
             })
             .collect())
     }

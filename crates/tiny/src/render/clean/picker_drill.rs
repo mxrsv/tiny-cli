@@ -158,6 +158,7 @@ mod tests {
             path: PathBuf::from(path),
             size: 1024,
             risk: RiskLevel::Review,
+            evidence: Vec::new(),
         }
     }
 

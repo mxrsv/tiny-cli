@@ -3,7 +3,7 @@
 use tiny_core::clean::checked_execute::{ItemOutcome, SkipReason, StopReason};
 use tiny_core::clean::finder_trash::TrashError;
 use tiny_core::clean::providers::ReportOnly;
-use tiny_core::clean::types::RiskLevel;
+use tiny_core::clean::types::{ComesBack, Evidence, RiskLevel};
 use tiny_core::options::CleanOptions;
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -76,6 +76,35 @@ pub struct FfiCleanCandidate {
     /// lower bound.
     pub unreadable_entries: u64,
     pub risk: FfiRisk,
+    /// Why this path was offered; never empty for a discovered candidate.
+    pub evidence: Vec<FfiEvidence>,
+}
+
+/// One checkable fact behind a candidate; Swift writes the copy. Times are
+/// Unix seconds.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiEvidence {
+    Modified { at: i64 },
+    ManifestModified { file: String, at: i64 },
+    LastCommit { at: i64 },
+    WorkTreeClean,
+    NotGitRepo,
+    VenvMarker,
+    LastOpened { at: i64 },
+    OwningApp { name: String },
+    OwningAppUnknown,
+    Sensitive { reason: String },
+}
+
+/// How a category's items come back after a move to Trash. The desktop
+/// groups `TrashOnly` categories as the user's own files.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiComesBack {
+    Rebuild { command: String },
+    Redownload,
+    AppRecreates,
+    TrashOnly,
+    NotRecoverable,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -97,6 +126,8 @@ pub struct FfiCleanCategory {
     /// Paths the provider found but that are never offered: the root, the
     /// home folder or its ancestors, or tool output outside the home folder.
     pub refused: Vec<FfiRefusedPath>,
+    /// `None` for an unregistered ID.
+    pub comes_back: Option<FfiComesBack>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -242,6 +273,37 @@ impl From<FfiCleanOptions> for CleanOptions {
             include_review: options.include_review,
             include_destructive: options.include_destructive,
             idle_days: options.idle_days,
+        }
+    }
+}
+
+impl From<Evidence> for FfiEvidence {
+    fn from(evidence: Evidence) -> Self {
+        match evidence {
+            Evidence::Modified { at } => Self::Modified { at },
+            Evidence::ManifestModified { file, at } => Self::ManifestModified { file, at },
+            Evidence::LastCommit { at } => Self::LastCommit { at },
+            Evidence::WorkTreeClean => Self::WorkTreeClean,
+            Evidence::NotGitRepo => Self::NotGitRepo,
+            Evidence::VenvMarker => Self::VenvMarker,
+            Evidence::LastOpened { at } => Self::LastOpened { at },
+            Evidence::OwningApp { name } => Self::OwningApp { name },
+            Evidence::OwningAppUnknown => Self::OwningAppUnknown,
+            Evidence::Sensitive { reason } => Self::Sensitive { reason },
+        }
+    }
+}
+
+impl From<ComesBack> for FfiComesBack {
+    fn from(comes_back: ComesBack) -> Self {
+        match comes_back {
+            ComesBack::Rebuild { command } => Self::Rebuild {
+                command: command.to_string(),
+            },
+            ComesBack::Redownload => Self::Redownload,
+            ComesBack::AppRecreates => Self::AppRecreates,
+            ComesBack::TrashOnly => Self::TrashOnly,
+            ComesBack::NotRecoverable => Self::NotRecoverable,
         }
     }
 }

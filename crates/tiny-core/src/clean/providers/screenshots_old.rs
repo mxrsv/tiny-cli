@@ -129,6 +129,7 @@ pub fn list_old_screenshots(ctx: &ScanContext<'_>, dir: &Path, idle_days: u64) -
             path,
             size,
             risk: RiskLevel::Review,
+            evidence: Vec::new(),
         });
     }
     out

@@ -316,12 +316,12 @@ import TinyEngine
                          status: FfiCategoryStatus = .found, candidates: [FfiCleanCandidate] = []) -> FfiCleanCategory {
         FfiCleanCategory(id: id, label: id, inclusionReason: "fixture", family: "dev", risk: risk, status: status,
                          desktopAction: desktop, candidates: candidates, totalBytes: candidates.reduce(0) { $0 + $1.sizeBytes },
-                         unreadable: [], refused: [])
+                         unreadable: [], refused: [], comesBack: .appRecreates)
     }
 
     nonisolated static func candidate(_ id: String, risk: FfiRisk = .safe, size: UInt64 = 100,
                                       path: String? = nil) -> FfiCleanCandidate {
-        FfiCleanCandidate(id: id, path: path ?? "/Users/alice/Library/Caches/\(id)", sizeBytes: size, unreadableEntries: 0, risk: risk)
+        FfiCleanCandidate(id: id, path: path ?? "/Users/alice/Library/Caches/\(id)", sizeBytes: size, unreadableEntries: 0, risk: risk, evidence: [])
     }
 }
 

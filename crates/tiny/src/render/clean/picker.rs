@@ -206,6 +206,7 @@ mod tests {
                 path: PathBuf::from(format!("/tmp/{}", id)),
                 size,
                 risk,
+                evidence: Vec::new(),
             }],
             total_size: size,
         }

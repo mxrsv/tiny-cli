@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::error::Result;
 
@@ -6,6 +7,7 @@ use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
 use crate::clean::fs_safe::{dir_size_checked, walk_with};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
+use crate::runner::{CommandRunner, RealRunner};
 
 const ID: &str = "python-caches";
 const LABEL: &str = "Python __pycache__ / venv (idle)";
@@ -15,13 +17,20 @@ const VENV_NAMES: &[&str] = &["venv", ".venv", "env"];
 pub struct PythonCaches {
     pub idle_days: u64,
     pub search_roots: Vec<PathBuf>,
+    #[allow(dead_code)] // read by the git-aware idle check (plan T2)
+    runner: Arc<dyn CommandRunner>,
 }
 
 impl PythonCaches {
     pub fn new(idle_days: u64) -> Self {
+        Self::with_runner(idle_days, Arc::new(RealRunner))
+    }
+
+    pub fn with_runner(idle_days: u64, runner: Arc<dyn CommandRunner>) -> Self {
         Self {
             idle_days,
             search_roots: dev_search_roots(),
+            runner,
         }
     }
 }
@@ -59,6 +68,7 @@ impl CleanProvider for PythonCaches {
                     path: found,
                     size,
                     risk: RiskLevel::Review,
+                    evidence: Vec::new(),
                 });
             }
             for found in find_orphan_venv(ctx, root, self.idle_days) {
@@ -69,6 +79,7 @@ impl CleanProvider for PythonCaches {
                     path: found,
                     size,
                     risk: RiskLevel::Review,
+                    evidence: Vec::new(),
                 });
             }
         }

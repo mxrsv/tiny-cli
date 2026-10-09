@@ -545,6 +545,7 @@ mod tests {
                     path: PathBuf::from(format!("/x/{size}")),
                     size,
                     risk: RiskLevel::Safe,
+                    evidence: Vec::new(),
                 },
                 unreadable: None,
             };

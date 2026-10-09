@@ -21,8 +21,8 @@ use tiny_core::clean::finder_trash::{FinderTrash, Trash};
 use tiny_core::clean::fs_safe::{fingerprint, PathFingerprint};
 use tiny_core::clean::process::{AppProbe, RunnerProbe};
 use tiny_core::clean::providers::{
-    all_providers_with, category_family, desktop_report_only, known_category_ids, CleanProvider,
-    ReportOnly,
+    all_providers_with, category_family, comes_back, desktop_report_only, known_category_ids,
+    CleanProvider, ReportOnly,
 };
 use tiny_core::clean::scan_context::{ScanContext, Unreadable};
 use tiny_core::clean::trash_plan::{
@@ -348,6 +348,23 @@ fn desktop_action(providers: &[Box<dyn CleanProvider>], id: &str) -> FfiDesktopA
     }
 }
 
+/// The provider's facts, or the path's own mtime when the category rule
+/// alone selected it, so every candidate shows at least one fact.
+fn candidate_evidence(item: &CleanItem) -> Vec<FfiEvidence> {
+    if !item.evidence.is_empty() {
+        return item.evidence.iter().cloned().map(Into::into).collect();
+    }
+    std::fs::symlink_metadata(&item.path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|since| FfiEvidence::Modified {
+            at: i64::try_from(since.as_secs()).unwrap_or(i64::MAX),
+        })
+        .into_iter()
+        .collect()
+}
+
 fn store_category(
     discovery_id: u64,
     category: CheckedCategory,
@@ -357,6 +374,7 @@ fn store_category(
     let family = known_category_ids()
         .contains(&category.id.as_str())
         .then(|| category_family(&category.id).id().to_string());
+    let comes_back = comes_back(&category.id).map(Into::into);
     let mut ffi = FfiCleanCategory {
         id: category.id,
         label: category.label,
@@ -369,6 +387,7 @@ fn store_category(
         total_bytes: 0,
         unreadable: Vec::new(),
         refused: Vec::new(),
+        comes_back,
     };
     match category.outcome {
         CategoryOutcome::Found {
@@ -395,6 +414,7 @@ fn store_category(
                     size_bytes: item.size,
                     unreadable_entries: checked.unreadable.map_or(0, |u| u.entries),
                     risk: item.risk.into(),
+                    evidence: candidate_evidence(&item),
                 });
                 candidates.insert(
                     id,

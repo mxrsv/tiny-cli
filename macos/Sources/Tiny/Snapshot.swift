@@ -137,12 +137,12 @@ private struct DisplayCleanEngine: CleanEngine {
     func cleanDiscover(_ options: FfiCleanOptions, token: CancellationToken,
                        progress: any ProgressListener) async throws -> FfiDiscovery {
         func item(_ id: String, _ path: String, _ size: UInt64, _ risk: FfiRisk = .safe) -> FfiCleanCandidate {
-            FfiCleanCandidate(id: id, path: "\(Self.logs)/\(path)", sizeBytes: size, unreadableEntries: 0, risk: risk)
+            FfiCleanCandidate(id: id, path: "\(Self.logs)/\(path)", sizeBytes: size, unreadableEntries: 0, risk: risk, evidence: [])
         }
         func category(_ id: String, _ label: String, _ risk: FfiRisk, _ items: [FfiCleanCandidate]) -> FfiCleanCategory {
             FfiCleanCategory(id: id, label: label, inclusionReason: "Sample", family: "user-storage", risk: risk, status: .found,
                              desktopAction: .moveToTrash, candidates: items, totalBytes: items.reduce(0) { $0 + $1.sizeBytes },
-                             unreadable: [], refused: [])
+                             unreadable: [], refused: [], comesBack: .appRecreates)
         }
         return FfiDiscovery(discoveryId: "sample", categories: [
             category("user-logs", "User logs", .safe, [item("jetbrains", "JetBrains", 120_000_000),

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::fs_safe::{dir_size_checked, list_children, remove_recursive_safe};
 use super::scan_context::ScanContext;
-use super::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
+use super::types::{CleanItem, ComesBack, ExecAction, ExecReport, RiskLevel};
 
 pub mod android_sdk;
 pub mod app_orphans;
@@ -24,6 +24,7 @@ pub mod ios_simulators;
 pub mod jetbrains;
 pub mod mail_attachments;
 pub mod node_modules;
+pub mod project_activity;
 pub mod python_caches;
 pub mod quarantine;
 pub mod rust_targets;
@@ -84,6 +85,37 @@ pub fn category_family(category_id: &str) -> Family {
         "quarantine" | "crash-reports" | "font-quicklook-caches" => Family::System,
         "app-orphans" | "time-machine-local" => Family::System,
         other => panic!("unknown category id: {}", other),
+    }
+}
+
+/// How a category's items come back after a move to Trash. `None` for an
+/// id outside `known_category_ids()`. "Your files" on the desktop are the
+/// `TrashOnly` categories.
+pub fn comes_back(category_id: &str) -> Option<ComesBack> {
+    let rebuild = |command| Some(ComesBack::Rebuild { command });
+    match category_id {
+        "cargo" | "npm" | "pnpm" | "yarn" | "gradle-maven" | "android-sdk" | "docker" => {
+            Some(ComesBack::Redownload)
+        }
+        "streaming-caches" | "chat-caches" => Some(ComesBack::Redownload),
+        "node-modules" => rebuild("npm, pnpm or yarn install"),
+        "python-caches" => rebuild("python -m venv, then pip install"),
+        "rust-targets" => rebuild("cargo build"),
+        "go-cache" => rebuild("go build"),
+        "xcode-derived" => rebuild("Build in Xcode"),
+        "user-logs" | "user-caches" | "jetbrains" | "vscode" | "ios-simulators" => {
+            Some(ComesBack::AppRecreates)
+        }
+        "xcode-devicesupport" | "browser-caches" | "quarantine" | "crash-reports" => {
+            Some(ComesBack::AppRecreates)
+        }
+        "font-quicklook-caches" => Some(ComesBack::AppRecreates),
+        "xcode-archives" | "downloads-old" | "screenshots-old" | "mail-attachments" => {
+            Some(ComesBack::TrashOnly)
+        }
+        "app-orphans" => Some(ComesBack::TrashOnly),
+        "time-machine-local" | "trash" => Some(ComesBack::NotRecoverable),
+        _ => None,
     }
 }
 
@@ -194,16 +226,25 @@ pub fn all_providers_with(
     vec![
         Box::new(user_logs::UserLogs),
         Box::new(xcode::XcodeDerivedData),
-        Box::new(user_caches::UserCaches),
+        Box::new(user_caches::UserCaches::with_runner(runner.clone())),
         Box::new(xcode::XcodeArchives),
         Box::new(xcode::XcodeDeviceSupport),
         Box::new(dev_caches::CargoCache),
         Box::new(dev_caches::NpmCache::with_runner(runner.clone())),
         Box::new(dev_caches::PnpmStore::with_runner(runner.clone())),
         Box::new(dev_caches::YarnCache::with_runner(runner.clone())),
-        Box::new(node_modules::NodeModules::new(opts.idle_days)),
-        Box::new(python_caches::PythonCaches::new(opts.idle_days)),
-        Box::new(rust_targets::RustTargets::new(opts.idle_days)),
+        Box::new(node_modules::NodeModules::with_runner(
+            opts.idle_days,
+            runner.clone(),
+        )),
+        Box::new(python_caches::PythonCaches::with_runner(
+            opts.idle_days,
+            runner.clone(),
+        )),
+        Box::new(rust_targets::RustTargets::with_runner(
+            opts.idle_days,
+            runner.clone(),
+        )),
         Box::new(gradle_maven::GradleMaven),
         Box::new(jetbrains::JetBrains),
         Box::new(vscode::VsCode),
@@ -211,7 +252,10 @@ pub fn all_providers_with(
         Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
         Box::new(go_cache::GoCache::with_runner(runner.clone())),
         Box::new(docker::Docker::with_runner(runner.clone())),
-        Box::new(downloads_old::DownloadsOld::new(opts.idle_days)),
+        Box::new(downloads_old::DownloadsOld::with_runner(
+            opts.idle_days,
+            runner.clone(),
+        )),
         Box::new(screenshots_old::ScreenshotsOld::with_runner(
             opts.idle_days,
             runner.clone(),
@@ -323,6 +367,7 @@ pub(crate) fn top_level_entries(
             path,
             size,
             risk,
+            evidence: Vec::new(),
         });
     }
     out
@@ -348,6 +393,7 @@ pub(crate) fn root_as_item(
         path: root.to_path_buf(),
         size,
         risk,
+        evidence: Vec::new(),
     }]
 }
 
@@ -542,7 +588,9 @@ mod tests {
         let chrome = h.join("Library/Application Support/Google/Chrome/Default/Cache");
         assert_eq!(browser.item_apps(&chrome), vec!["Google Chrome"]);
         assert!(browser.item_apps(Path::new("/elsewhere")).len() > 1);
-        let caches = user_caches::UserCaches;
+        let caches = user_caches::UserCaches::with_runner(Arc::new(
+            crate::runner::test_support::MockRunner::new(),
+        ));
         assert_eq!(
             caches.item_apps(&h.join("Library/Caches/com.apple.Safari")),
             vec!["Safari"]
@@ -564,6 +612,14 @@ mod tests {
         for other in [".cargo/bin", ".cargo/credentials.toml", ".cargo", ".rustup"] {
             assert!(cargo.check_item(&h.join(other)).is_err(), "{other}");
         }
+    }
+
+    #[test]
+    fn every_category_says_how_its_items_come_back() {
+        for id in known_category_ids() {
+            assert!(comes_back(id).is_some(), "{id}");
+        }
+        assert_eq!(comes_back("not-a-category"), None);
     }
 
     #[test]

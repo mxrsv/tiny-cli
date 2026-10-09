@@ -42,6 +42,7 @@ impl CleanProvider for TrashProvider {
             path: root,
             size,
             risk: RiskLevel::Destructive,
+            evidence: Vec::new(),
         }])
     }
 
