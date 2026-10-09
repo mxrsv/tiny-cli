@@ -15,7 +15,11 @@ interview.
   Clean, Processes and the CLI.
 - **Style:** native, in the manner of Apple's macOS product page: light
   background, Apple-widget tiles with glass/material depth. Motion is lighter
-  than Apple's own pages.
+  than Apple's own pages, with one exception approved on 2026-10-09: the hero
+  product sits on a MacBook with a notch, and on wide screens it pins while its
+  display plays three steps (processes → scan → clean to the Trash) as the user
+  scrolls. Phones and reduced-motion users get the same three steps as a static
+  sequence.
 - **Pricing:** Free + Pro, open-core, Pro billed as a subscription. This
   replaces the PRD's "free, no subscription" position (updated in the
   [PRD](../../_bmad-output/planning-artifacts/prd.md)). The Pro feature list,

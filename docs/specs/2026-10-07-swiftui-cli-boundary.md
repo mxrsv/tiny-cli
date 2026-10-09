@@ -1,6 +1,6 @@
 # SwiftUI app and shared Rust core boundary
 
-Status: Approved direction; native visual acceptance and production integration pending.
+Status: Read-only app overview with system widgets and app groups implemented and running locally; user visual acceptance pending. Actions X1–X4 approved 2026-10-08 (O1 = Swift app quit, O2 = `--port`) and implemented on `feat/native-desktop`; user acceptance pending.
 Started: 2026-10-07
 
 ## Goal and approved decisions
@@ -42,6 +42,119 @@ cancellation, and stale/unavailable data. No real signals, filesystem mutations,
 background scanning, or permission changes occur in the demo. Production UI
 integration requires the user's rendered-flow acceptance.
 
+## First live native slice (approved 2026-10-08)
+
+The first runnable SwiftUI app reads real processes on this Mac and lets the
+user inspect the accepted bento-style interface. Process termination and all
+cleanup actions are deferred. This slice may ship before T3c/T3d/T4; it reuses
+the existing process core and UniFFI adapter. No new CLI contract is needed.
+
+- **R1:** Given the installed development app, when launched directly, then it
+  lists real local processes (name, PID, CPU, memory and owner) without a dev
+  server, worker or separate CLI installation.
+- **R2:** Given the live list, when searching, sorting, selecting, refreshing or
+  pausing automatic refresh, then the interface stays responsive and details
+  belong to the selected PID/start-time identity. Late results cannot replace
+  a newer selection; exited/reused PIDs show an explicit unavailable state.
+- **R3:** Given unmeasured CPU, inaccessible memory/ports, or a query error,
+  then the UI distinguishes unavailable data from zero and empty results;
+  retained data is visibly stale/paused. CPU is per-core and may exceed 100%.
+- **R4:** Given this first slice, when interacting with any control, then no
+  process signal, cleanup execution or permission change occurs. The UI labels
+  the read-only scope; deferred actions are not actionable.
+- **R5:** Given the native bundle, when comparing against an owned temporary
+  process and rendering the live SwiftUI surface, then the process appears and
+  disappears correctly, the signature verifies, and the user can review the
+  actual app. Automated evidence does not replace user visual acceptance.
+
+The existing dark bento direction and native `.app` review surface remain
+approved. The original scratch demo is absent as of 2026-10-08; an earlier bento source
+was recovered from session history as a visual reference. The live integration
+still requires its own rendered-flow acceptance.
+
+## App overview and grouping (2026-10-08)
+
+The user requested CPU/RAM widgets and an app-oriented list with recognizable
+app icons, replacing the flat process-first overview. Keep the native dark
+bento surface and read-only boundary. System & Background is collapsed by
+default for processes without an identifiable app. This implementation default
+was stated in the conversation; the optional alternative is a filter-based view.
+
+- **G1:** Given a valid live sample, the top two widgets show whole-machine CPU
+  utilization (0–100%) and RAM used/total plus percentage. They use system metrics,
+  never summed process percentages or summed resident memory as whole-machine
+  usage. Warm-up, unavailable, paused and stale states stay explicit.
+- **G2:** Given several processes belonging to one installed app, the main list
+  shows one stable app row with its local app icon, name, process count and
+  aggregated CPU/resident memory. App association uses bundle/executable metadata
+  and bounded parent relationships, not name similarity. Independent child apps
+  keep their own group; unresolved processes remain available separately.
+- **G3:** Given incomplete member measurements, app totals visibly state partial
+  availability rather than presenting missing data as zero. App CPU retains the
+  current per-core convention (can exceed 100%); whole-machine widget CPU is
+  explicitly labelled separately. Resident-memory sums are not a substitute for
+  system RAM usage and may count shared pages more than once.
+- **G4:** Given a selected app, its inspector shows the member processes and lets
+  the user select a member for the existing PID/start-time-safe detail view.
+  Search matches app or member metadata; sort uses app aggregate resources.
+  Refresh preserves app selection across member churn; disappeared groups and
+  reused process identities cannot display another entity's details.
+- **G5:** Given missing local icons or app metadata, show a native fallback icon
+  and retain inspectable process data. No network icon lookup, new dependency,
+  process action, cleanup action, or permission change is introduced.
+- **G6:** Given the new app surface, native checks cover grouping, aggregate
+  completeness, lifecycle/selection and system metric semantics; a real-data
+  native render and installed bundle are supplied for user visual acceptance.
+
+## Process and cleanup actions (approved 2026-10-08)
+
+On 2026-10-08 the user approved five actions for the native app and CLI:
+Quit, Force Quit, Clean to Trash, Free port, and Reveal/Copy. This
+reactivates T3c, T3d, T4 and the action-capable part of T5/T6 under the
+existing PC-P, PC-C, PC-D and B criteria, and supersedes R4's read-only rule
+for these five actions only. Suspend/resume, priority changes, app-scoped
+cleanup, uninstall and login items remain deferred.
+
+- **X1 — Quit / Force Quit:** PC-P3/PC-P4 and the process-action rules in the
+  FFI boundary below apply unchanged. App-level quit semantics are open (O1).
+- **X2 — Free port:** Given a TCP port, when the user looks up its listener,
+  then the core returns each visible owning process with PID/start-time
+  identity, and Quit/Force Quit go through the X1 path with its refusals and
+  revalidation. A non-root `lsof` cannot see other users' sockets, so an
+  invisible owner, another user's owner, or a failed probe is reported as
+  unknown or not actionable, never as "port is free". Several owners are all
+  listed; nothing is signalled automatically.
+- **X3 — Reveal / Copy:** Given a selected app or process, the user can reveal
+  its bundle or executable in Finder and copy its PID or path. These are
+  Swift-only, non-mutating actions. A missing or inaccessible path disables the
+  action with a reason instead of revealing something else.
+- **X4 — Action surface:** The READ ONLY label is replaced only once actions are
+  wired. Confirmation text names the target and the consequence (PC-D2). Layout
+  of action controls passes the frontend gate with the user before Swift work.
+  Layout chosen by the user on 2026-10-08: Quit and a `⋯` menu (Reveal, Copy)
+  on the selected app in the inspector, Quit/Force Quit…/Reveal/Copy PID on a
+  selected member process, and the same items in the row context menu; native
+  macOS alerts naming target and consequence, with Force Quit confirmed
+  separately as a destructive action; a bento **Ports** tile listing the
+  current user's visible listeners (owner, Quit/Force Quit, visibility caveat);
+  and an Activity ⇄ Clean switch in the bottom dock, where Clean shows category
+  tiles (green safe, orange review, report-only marked) leading to a per-path
+  review sheet, Move to Trash and a per-item report. Each rendered flow still
+  needs the user's visual acceptance.
+
+Decisions (user chose the recommended options on 2026-10-08):
+
+- **O1 — App-level Quit, decided (a):** each app row groups several processes, and signalling
+  all members is a tree signal that PC-P3 forbids. Options: (a) Quit on the app
+  row uses `NSRunningApplication.terminate()` in Swift, verified on 2026-10-08
+  to need no Automation prompt (evidence in the plan's ui lane part 1), plus per-PID Force Quit through Rust; this moves one action into Swift
+  and amends this boundary. (b) Rust sends an `osascript` quit by bundle ID,
+  which triggers an Automation prompt per target app. (c) Per-PID Quit only, in
+  the inspector. Chosen: (a). App-row Quit is the one Swift-owned action;
+  per-PID Quit/Force Quit stay in Rust.
+- **O2 — Free port in the CLI, decided:** additive `tiny processes --port <PORT>`
+  filters the list to visible owners (PC-P5 parity); quitting stays by PID.
+
 ## In-process FFI boundary
 
 A dedicated Rust adapter crate depends on `tiny-core` and exports a narrow API
@@ -70,8 +183,10 @@ silently omitted.
 - Cancellation uses an adapter-owned token object passed to the operation.
   Rust checks it between work units and before every mutation and returns
   accurate completed/failed/skipped results.
-- An adapter-owned session object gates overlapping operations: busy operations
-  are rejected instead of queued or merged.
+- An adapter-owned session object gates overlapping scans and mutations: busy
+  operations are rejected instead of queued or merged. Short read-only process
+  queries (list/detail) do not take the gate, so the UI can refresh during a
+  scan.
 - Planned operations: process list, process detail, process terminate
   (graceful or force, each confirmed separately), cleanup discover, cleanup
   preview, cleanup execute, and cancel. Mutation calls require
