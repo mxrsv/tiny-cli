@@ -17,6 +17,20 @@ const MDFIND: &str = "/usr/bin/mdfind";
 const PLUTIL: &str = "/usr/bin/plutil";
 const BUNDLE_ID_ATTR: &str = "kMDItemCFBundleIdentifier";
 const APPLE_PREFIX: &str = "com.apple.";
+/// Apple caches whose folder name lacks the `com.apple.` prefix.
+const APPLE_FOLDERS: &[&str] = &[
+    "Animoji",
+    "CloudKit",
+    "FamilyCircle",
+    "familycircled",
+    "GeoServices",
+    "PassKit",
+];
+/// Folders named after a vendor, not a bundle id, and the app that owns them.
+const VENDOR_APPS: &[(&str, &str)] = &[
+    ("Google", "Google Chrome"),
+    ("BraveSoftware", "Brave Browser"),
+];
 /// Ids per Spotlight query, so hundreds of cache folders stay safe.
 const QUERY_CHUNK: usize = 50;
 
@@ -144,7 +158,14 @@ impl UserCaches {
 
     /// The resolved owner of a cache folder name, resolving lazily
     /// when discovery has not seen it (a fresh provider at execution time).
+    /// A vendor folder is owned by the app in `VENDOR_APPS`.
     fn owner(&self, name: &str) -> Option<Owner> {
+        if let Some((_, app)) = VENDOR_APPS.iter().find(|(folder, _)| *folder == name) {
+            return Some(Owner {
+                executable: (*app).to_string(),
+                via_parent: false,
+            });
+        }
         if !is_bundle_id(name) {
             return None;
         }
@@ -251,10 +272,12 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// System daemon caches (`com.apple.bird`, ...) are not the user's to clear.
+/// System daemon caches (`com.apple.bird`, `CloudKit`, ...) are not the
+/// user's to clear.
 fn is_apple_cache(name: &str) -> bool {
     name.get(..APPLE_PREFIX.len())
         .is_some_and(|p| p.eq_ignore_ascii_case(APPLE_PREFIX))
+        || APPLE_FOLDERS.iter().any(|f| f.eq_ignore_ascii_case(name))
 }
 
 /// Looks like a reverse-DNS bundle id. Checked before the name goes into a
@@ -352,13 +375,54 @@ mod tests {
 
     #[test]
     fn apple_daemon_caches_are_never_offered() {
-        let root = fixture("apple", &["com.apple.bird", "COM.APPLE.passd", "Homebrew"]);
+        let root = fixture(
+            "apple",
+            &[
+                "com.apple.bird",
+                "COM.APPLE.passd",
+                "Animoji",
+                "CloudKit",
+                "FamilyCircle",
+                "familycircled",
+                "GeoServices",
+                "PassKit",
+                "Homebrew",
+            ],
+        );
         let m = MockChecker::none();
         let ctx = ScanContext::new(None, &m);
         let items = provider(MockRunner::new())
             .list_caches(&ctx, &root)
             .unwrap();
         assert_eq!(names(&items), vec!["Homebrew"]);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn a_vendor_folder_is_gated_by_the_vendor_app() {
+        let root = fixture("vendor", &["Google", "BraveSoftware"]);
+        let chrome = MockChecker::with_running(["Google Chrome"]);
+        let ctx = ScanContext::new(None, &chrome);
+        let caches = provider(MockRunner::new());
+        let items = caches.list_caches(&ctx, &root).unwrap();
+        assert_eq!(names(&items), vec!["BraveSoftware"], "Chrome is running");
+        assert_eq!(
+            items[0].evidence,
+            vec![Evidence::OwningApp {
+                name: "Brave Browser".into()
+            }]
+        );
+        let idle = MockChecker::none();
+        let ctx = ScanContext::new(None, &idle);
+        let items = caches.list_caches(&ctx, &root).unwrap();
+        let google = items.iter().find(|i| i.path.ends_with("Google")).unwrap();
+        assert_eq!(
+            google.evidence,
+            vec![Evidence::OwningApp {
+                name: "Google Chrome".into()
+            }]
+        );
+        assert_eq!(caches.item_apps(&google.path), vec!["Google Chrome"]);
         cleanup(&root);
     }
 
