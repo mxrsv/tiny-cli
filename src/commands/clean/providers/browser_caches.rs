@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::{execute_per_item, root_as_item, CleanProvider};
+use super::{execute_per_item, read_root, root_as_item, CleanProvider};
 use crate::commands::clean::fs_safe::is_dir_safe;
 use crate::commands::clean::process::{PgrepChecker, ProcessChecker};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
@@ -17,7 +17,7 @@ const LABEL: &str = "Browser caches";
 const BROWSER_CACHE_PATHS: &[(&str, &str)] = &[
     ("Library/Caches/com.apple.Safari", "Safari"),
     (
-        "Library/Application Support/Google/Chrome/Default/Cache",
+        "Library/Caches/Google/Chrome/Default/Cache",
         "Google Chrome",
     ),
     (
@@ -90,7 +90,7 @@ impl CleanProvider for BrowserCaches {
         }
         // Firefox glob.
         let firefox_running = self.checker.is_running(FIREFOX_APP);
-        for cache2 in firefox_cache_dirs(&h.join(FIREFOX_PROFILES_ROOT)) {
+        for cache2 in firefox_cache_dirs(&h.join(FIREFOX_PROFILES_ROOT))? {
             if firefox_running {
                 eprintln!(
                     "warn: skipping {} (app 'Firefox' is running)",
@@ -109,11 +109,11 @@ impl CleanProvider for BrowserCaches {
 
 /// Resolves `<profiles_root>/<profile>/cache2` for every direct child
 /// profile directory.
-pub fn firefox_cache_dirs(profiles_root: &std::path::Path) -> Vec<PathBuf> {
+pub fn firefox_cache_dirs(profiles_root: &std::path::Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(profiles_root) {
-        Ok(it) => it,
-        Err(_) => return out,
+    let entries = match read_root(profiles_root)? {
+        Some(it) => it,
+        None => return Ok(out),
     };
     for entry in entries.flatten() {
         let p = entry.path();
@@ -125,7 +125,7 @@ pub fn firefox_cache_dirs(profiles_root: &std::path::Path) -> Vec<PathBuf> {
             out.push(cache2);
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -203,7 +203,7 @@ mod tests {
         // Two profiles, one with cache2, one without.
         fs::create_dir_all(root.join("abcd1234.default/cache2")).unwrap();
         fs::create_dir_all(root.join("efgh5678.dev-edition")).unwrap();
-        let found = firefox_cache_dirs(&root);
+        let found = firefox_cache_dirs(&root).unwrap();
         assert_eq!(found.len(), 1);
         assert!(found[0].ends_with("abcd1234.default/cache2"));
         let _ = fs::remove_dir_all(&root);
