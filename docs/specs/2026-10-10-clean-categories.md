@@ -6,7 +6,7 @@ status: APPROVED (layout option pending)
 # Spec: Clean categories — families, an honest overview and new categories
 
 **Date**: 2026-10-10 | **Status**: requirements approved 2026-10-10; layout option pending
-the mock review | **Plan**: written once the layout is chosen | **Builds on**:
+the mock review | **Plan**: [2026-10-10-clean-categories](../plans/2026-10-10-clean-categories.md) | **Builds on**:
 [clean trust spec](2026-10-09-clean-trust-evidence.md)
 
 ## 1. Context
