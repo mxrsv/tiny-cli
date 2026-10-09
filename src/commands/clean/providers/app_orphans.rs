@@ -116,7 +116,7 @@ impl CleanProvider for AppOrphans {
             return Ok(Vec::new());
         }
         let support_dir = h.join(APP_SUPPORT);
-        let candidates = top_level_entries(&support_dir, ID, LABEL, RiskLevel::Review);
+        let candidates = top_level_entries(&support_dir, ID, LABEL, RiskLevel::Review)?;
         // Keep only entries whose dir name doesn't match any installed bundle id.
         let orphans: Vec<CleanItem> = candidates
             .into_iter()

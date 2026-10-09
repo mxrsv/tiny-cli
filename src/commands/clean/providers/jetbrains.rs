@@ -45,7 +45,7 @@ impl CleanProvider for JetBrains {
                 ID,
                 LABEL,
                 RiskLevel::Review,
-            ));
+            )?);
         }
         Ok(items)
     }

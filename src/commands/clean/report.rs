@@ -28,6 +28,12 @@ pub fn print_summary(report: &DiscoveryReport) {
             println!("  ⚠ skipped {} — {} is running. Quit {} and rerun.", cat, app, app);
         }
     }
+    if !report.failed.is_empty() {
+        println!();
+        for (cat, err) in &report.failed {
+            println!("  ✗ could not scan {} — {}", cat, err);
+        }
+    }
 }
 
 pub fn print_plan(groups: &[&CategoryGroup]) {

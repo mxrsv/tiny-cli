@@ -52,7 +52,7 @@ impl CleanProvider for IosSimulators {
                 ID,
                 LABEL,
                 RiskLevel::Review,
-            ));
+            )?);
         }
         Ok(items)
     }

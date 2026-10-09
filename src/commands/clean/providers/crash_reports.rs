@@ -35,14 +35,14 @@ impl CleanProvider for CrashReports {
                 ID,
                 LABEL,
                 RiskLevel::Safe,
-            ));
+            )?);
         }
         items.extend(top_level_entries(
             &PathBuf::from(SYS_DIAG),
             ID,
             LABEL,
             RiskLevel::Safe,
-        ));
+        )?);
         Ok(items)
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {

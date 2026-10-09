@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use super::{execute_per_item, top_level_entries, CleanProvider};
+use super::{execute_per_item, read_root, top_level_entries, CleanProvider};
 use crate::commands::clean::fs_safe::is_dir_safe;
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -38,14 +38,14 @@ impl CleanProvider for MailAttachments {
             None => return Ok(Vec::new()),
         };
         let mut items = Vec::new();
-        for v_dir in v_dirs(&h.join("Library/Mail")) {
+        for v_dir in v_dirs(&h.join("Library/Mail"))? {
             let attachments = v_dir.join("MailData/Attachments");
             items.extend(top_level_entries(
                 &attachments,
                 ID,
                 LABEL,
                 RiskLevel::Review,
-            ));
+            )?);
         }
         Ok(items)
     }
@@ -56,11 +56,11 @@ impl CleanProvider for MailAttachments {
 
 /// Returns every direct child of `mail_root` whose name starts with `V`
 /// followed by digits (Mail's per-version data dirs: `V8`, `V9`, ...).
-pub fn v_dirs(mail_root: &std::path::Path) -> Vec<PathBuf> {
+pub fn v_dirs(mail_root: &std::path::Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(mail_root) {
-        Ok(it) => it,
-        Err(_) => return out,
+    let entries = match read_root(mail_root)? {
+        Some(it) => it,
+        None => return Ok(out),
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -82,7 +82,7 @@ pub fn v_dirs(mail_root: &std::path::Path) -> Vec<PathBuf> {
             out.push(path);
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -124,7 +124,7 @@ mod tests {
         fs::create_dir_all(root.join("Vacation")).unwrap(); // letter-suffix → must skip
         fs::create_dir_all(root.join("V")).unwrap(); // bare V → must skip
         fs::write(root.join("V99"), b"file").unwrap(); // file, not dir → must skip
-        let mut found = v_dirs(&root);
+        let mut found = v_dirs(&root).unwrap();
         found.sort();
         assert_eq!(found.len(), 2);
         assert!(found.iter().all(|p| {

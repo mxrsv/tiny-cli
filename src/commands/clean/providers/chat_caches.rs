@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::{execute_per_item, root_as_item, CleanProvider};
+use super::{execute_per_item, read_root, root_as_item, CleanProvider};
 use crate::commands::clean::fs_safe::is_dir_safe;
 use crate::commands::clean::process::{PgrepChecker, ProcessChecker};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
@@ -84,7 +84,7 @@ impl CleanProvider for ChatCaches {
         }
         // Telegram: glob resolution.
         let telegram_running = self.checker.is_running("Telegram");
-        for tg_media in telegram_media_dirs(&h.join(TELEGRAM_GROUP_CONTAINERS)) {
+        for tg_media in telegram_media_dirs(&h.join(TELEGRAM_GROUP_CONTAINERS))? {
             if telegram_running {
                 eprintln!(
                     "warn: skipping {} (app 'Telegram' is running)",
@@ -103,11 +103,11 @@ impl CleanProvider for ChatCaches {
 
 /// Resolves `<group_containers>/*.ru.keepcoder.Telegram/account-*/postbox/
 /// media` for every matching account.
-pub fn telegram_media_dirs(group_containers: &std::path::Path) -> Vec<PathBuf> {
+pub fn telegram_media_dirs(group_containers: &std::path::Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(group_containers) {
-        Ok(it) => it,
-        Err(_) => return out,
+    let entries = match read_root(group_containers)? {
+        Some(it) => it,
+        None => return Ok(out),
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -137,7 +137,7 @@ pub fn telegram_media_dirs(group_containers: &std::path::Path) -> Vec<PathBuf> {
             }
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -197,7 +197,7 @@ mod tests {
             root.join("X.ru.keepcoder.Telegram/profile-1/postbox/media"),
         )
         .unwrap();
-        let found = telegram_media_dirs(&root);
+        let found = telegram_media_dirs(&root).unwrap();
         assert_eq!(found.len(), 1);
         assert!(found[0].ends_with("account-12345/postbox/media"));
         let _ = fs::remove_dir_all(&root);
