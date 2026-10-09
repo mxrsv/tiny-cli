@@ -38,88 +38,217 @@ pub mod user_logs;
 pub mod vscode;
 pub mod xcode;
 
-/// Top-level grouping for the hierarchical picker. Source of truth lives in
-/// `category_family()` below — providers must not declare their own family.
+/// Where a category's data comes from; the Clean screen and the CLI picker
+/// group categories by it. Assigned in `CATEGORIES`, never by a provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Family {
-    Dev,
-    UserStorage,
-    System,
+    AppsBrowsers,
+    DeveloperTools,
+    SystemLogs,
+    YourFiles,
+    Leftovers,
 }
 
 impl Family {
-    #[allow(dead_code)]
+    /// Display order.
+    pub const ALL: [Family; 5] = [
+        Family::AppsBrowsers,
+        Family::DeveloperTools,
+        Family::SystemLogs,
+        Family::YourFiles,
+        Family::Leftovers,
+    ];
+
     pub fn id(&self) -> &'static str {
         match self {
-            Family::Dev => "dev",
-            Family::UserStorage => "user-storage",
-            Family::System => "system",
+            Family::AppsBrowsers => "apps-browsers",
+            Family::DeveloperTools => "developer-tools",
+            Family::SystemLogs => "system-logs",
+            Family::YourFiles => "your-files",
+            Family::Leftovers => "leftovers",
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            Family::Dev => "Dev caches",
-            Family::UserStorage => "User storage",
-            Family::System => "System leftovers",
+            Family::AppsBrowsers => "Apps & browsers",
+            Family::DeveloperTools => "Developer tools",
+            Family::SystemLogs => "System & logs",
+            Family::YourFiles => "Your files",
+            Family::Leftovers => "Leftovers",
         }
     }
 }
 
-/// Maps a category id to its family. Panics on unknown id — every id in
-/// `known_category_ids()` MUST be covered (verified by test below).
+/// The desktop trust group a category's tile sits in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrustSection {
+    /// Movable, and a tool or app recreates the items.
+    Rebuilt,
+    /// Movable, and only the Trash brings the items back.
+    YourFiles,
+    /// The desktop shows the items but never moves them.
+    ReportOnly,
+}
+
+/// Per-category facts the UI needs without running discovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CategoryInfo {
+    pub id: &'static str,
+    pub family: Family,
+    pub comes_back: ComesBack,
+    /// `None` when the desktop moves the items to Trash. Enforcement stays
+    /// with the provider (`desktop_report_only`); a test keeps the two equal.
+    pub report_only: Option<ReportOnly>,
+}
+
+impl CategoryInfo {
+    /// Report-only wins; otherwise a category is "rebuilt" only when
+    /// something recreates its items, so permanent removal never reads as
+    /// rebuilt.
+    pub fn section(&self) -> TrustSection {
+        if self.report_only.is_some() {
+            return TrustSection::ReportOnly;
+        }
+        match self.comes_back {
+            ComesBack::Rebuild { .. } | ComesBack::Redownload | ComesBack::AppRecreates => {
+                TrustSection::Rebuilt
+            }
+            ComesBack::TrashOnly | ComesBack::NotRecoverable => TrustSection::YourFiles,
+        }
+    }
+}
+
+const fn category(
+    id: &'static str,
+    family: Family,
+    comes_back: ComesBack,
+    report_only: Option<ReportOnly>,
+) -> CategoryInfo {
+    CategoryInfo {
+        id,
+        family,
+        comes_back,
+        report_only,
+    }
+}
+
+const fn rebuild(command: &'static str) -> ComesBack {
+    ComesBack::Rebuild { command }
+}
+
+/// Every registered category in canonical id order, the order of
+/// `all_providers`. A new category is added here and in `all_providers`.
+pub const CATEGORIES: &[CategoryInfo] = {
+    use ComesBack::{AppRecreates, NotRecoverable, Redownload, TrashOnly};
+    use Family::{AppsBrowsers, DeveloperTools, Leftovers, SystemLogs, YourFiles};
+    &[
+        category("user-logs", SystemLogs, AppRecreates, None),
+        category(
+            "xcode-derived",
+            DeveloperTools,
+            rebuild("Build in Xcode"),
+            None,
+        ),
+        category("user-caches", AppsBrowsers, AppRecreates, None),
+        category("xcode-archives", DeveloperTools, TrashOnly, None),
+        category("xcode-devicesupport", DeveloperTools, AppRecreates, None),
+        category("cargo", DeveloperTools, Redownload, None),
+        category("npm", DeveloperTools, Redownload, None),
+        category("pnpm", DeveloperTools, Redownload, None),
+        category("yarn", DeveloperTools, Redownload, None),
+        category(
+            "node-modules",
+            DeveloperTools,
+            rebuild("npm, pnpm or yarn install"),
+            None,
+        ),
+        category(
+            "python-caches",
+            DeveloperTools,
+            rebuild("python -m venv, then pip install"),
+            None,
+        ),
+        category("rust-targets", DeveloperTools, rebuild("cargo build"), None),
+        category("gradle-maven", DeveloperTools, Redownload, None),
+        category("jetbrains", DeveloperTools, AppRecreates, None),
+        category("vscode", DeveloperTools, AppRecreates, None),
+        category("ios-simulators", DeveloperTools, AppRecreates, None),
+        // `xcrun simctl delete` removes the device for good.
+        category(
+            "simulator-devices",
+            DeveloperTools,
+            NotRecoverable,
+            Some(ReportOnly::Destructive),
+        ),
+        category("android-sdk", DeveloperTools, Redownload, None),
+        category("go-cache", DeveloperTools, rebuild("go build"), None),
+        // Runs `docker image prune` / `docker builder prune`, not a per-path move.
+        category(
+            "docker",
+            DeveloperTools,
+            Redownload,
+            Some(ReportOnly::NotPerPathTrash),
+        ),
+        // `docker volume prune` deletes container data.
+        category(
+            "docker-volumes",
+            DeveloperTools,
+            NotRecoverable,
+            Some(ReportOnly::Destructive),
+        ),
+        category("downloads-old", YourFiles, TrashOnly, None),
+        category("screenshots-old", YourFiles, TrashOnly, None),
+        category("mail-attachments", YourFiles, TrashOnly, None),
+        category("streaming-caches", AppsBrowsers, Redownload, None),
+        category("chat-caches", AppsBrowsers, Redownload, None),
+        category("browser-caches", AppsBrowsers, AppRecreates, None),
+        category("quarantine", SystemLogs, AppRecreates, None),
+        category("crash-reports", SystemLogs, AppRecreates, None),
+        // Folder names are matched against bundle IDs, so live data such as
+        // `Code` (VS Code) or `AddressBook` is flagged as orphaned.
+        category(
+            "app-orphans",
+            Leftovers,
+            TrashOnly,
+            Some(ReportOnly::UnreliableMatch),
+        ),
+        // `tmutil deletelocalsnapshots`.
+        category(
+            "time-machine-local",
+            SystemLogs,
+            NotRecoverable,
+            Some(ReportOnly::Destructive),
+        ),
+        category("font-quicklook-caches", SystemLogs, AppRecreates, None),
+        // Empty Trash.
+        category(
+            "trash",
+            Leftovers,
+            NotRecoverable,
+            Some(ReportOnly::Destructive),
+        ),
+    ]
+};
+
+/// The `CATEGORIES` entry for `category_id`; `None` for an unknown id.
+pub fn category_info(category_id: &str) -> Option<&'static CategoryInfo> {
+    CATEGORIES.iter().find(|info| info.id == category_id)
+}
+
+/// Maps a category id to its family. Panics on an unknown id.
 pub fn category_family(category_id: &str) -> Family {
-    match category_id {
-        // Dev family
-        "cargo" | "npm" | "pnpm" | "yarn" => Family::Dev,
-        "node-modules" | "python-caches" | "rust-targets" => Family::Dev,
-        "gradle-maven" | "jetbrains" | "vscode" => Family::Dev,
-        "ios-simulators" | "simulator-devices" | "android-sdk" => Family::Dev,
-        "go-cache" | "docker" | "docker-volumes" => Family::Dev,
-        "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
-        // UserStorage family
-        "downloads-old" | "screenshots-old" | "mail-attachments" => Family::UserStorage,
-        "streaming-caches" | "chat-caches" | "browser-caches" => Family::UserStorage,
-        // System family
-        "user-logs" | "user-caches" | "trash" => Family::System,
-        "quarantine" | "crash-reports" | "font-quicklook-caches" => Family::System,
-        "app-orphans" | "time-machine-local" => Family::System,
-        other => panic!("unknown category id: {}", other),
+    match category_info(category_id) {
+        Some(info) => info.family,
+        None => panic!("unknown category id: {}", category_id),
     }
 }
 
 /// How a category's items come back after a move to Trash. `None` for an
-/// id outside `known_category_ids()`. "Your files" on the desktop are the
-/// `TrashOnly` categories.
+/// id outside `known_category_ids()`.
 pub fn comes_back(category_id: &str) -> Option<ComesBack> {
-    let rebuild = |command| Some(ComesBack::Rebuild { command });
-    match category_id {
-        "cargo" | "npm" | "pnpm" | "yarn" | "gradle-maven" | "android-sdk" | "docker" => {
-            Some(ComesBack::Redownload)
-        }
-        "streaming-caches" | "chat-caches" => Some(ComesBack::Redownload),
-        "node-modules" => rebuild("npm, pnpm or yarn install"),
-        "python-caches" => rebuild("python -m venv, then pip install"),
-        "rust-targets" => rebuild("cargo build"),
-        "go-cache" => rebuild("go build"),
-        "xcode-derived" => rebuild("Build in Xcode"),
-        "user-logs" | "user-caches" | "jetbrains" | "vscode" | "ios-simulators" => {
-            Some(ComesBack::AppRecreates)
-        }
-        "xcode-devicesupport" | "browser-caches" | "quarantine" | "crash-reports" => {
-            Some(ComesBack::AppRecreates)
-        }
-        "font-quicklook-caches" => Some(ComesBack::AppRecreates),
-        "xcode-archives" | "downloads-old" | "screenshots-old" | "mail-attachments" => {
-            Some(ComesBack::TrashOnly)
-        }
-        "app-orphans" => Some(ComesBack::TrashOnly),
-        "time-machine-local" | "trash" | "docker-volumes" | "simulator-devices" => {
-            Some(ComesBack::NotRecoverable)
-        }
-        _ => None,
-    }
+    category_info(category_id).map(|info| info.comes_back)
 }
 
 pub trait CleanProvider {
@@ -289,41 +418,8 @@ pub fn all_providers_with(
 
 /// Canonical list of category ids accepted by `--category`.
 pub fn known_category_ids() -> &'static [&'static str] {
-    &[
-        "user-logs",
-        "xcode-derived",
-        "user-caches",
-        "xcode-archives",
-        "xcode-devicesupport",
-        "cargo",
-        "npm",
-        "pnpm",
-        "yarn",
-        "node-modules",
-        "python-caches",
-        "rust-targets",
-        "gradle-maven",
-        "jetbrains",
-        "vscode",
-        "ios-simulators",
-        "simulator-devices",
-        "android-sdk",
-        "go-cache",
-        "docker",
-        "docker-volumes",
-        "downloads-old",
-        "screenshots-old",
-        "mail-attachments",
-        "streaming-caches",
-        "chat-caches",
-        "browser-caches",
-        "quarantine",
-        "crash-reports",
-        "app-orphans",
-        "time-machine-local",
-        "font-quicklook-caches",
-        "trash",
-    ]
+    static IDS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| CATEGORIES.iter().map(|info| info.id).collect())
 }
 
 /// Canonical set of dev project roots scanned by walking providers
@@ -479,85 +575,79 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_known_category_has_family() {
-        for id in known_category_ids() {
-            // Must not panic. Result discarded; coverage is what we test.
-            let _ = category_family(id);
+    fn family_id_and_label_stable() {
+        let ids: Vec<&str> = Family::ALL.iter().map(Family::id).collect();
+        assert_eq!(
+            ids,
+            [
+                "apps-browsers",
+                "developer-tools",
+                "system-logs",
+                "your-files",
+                "leftovers"
+            ]
+        );
+        let labels: Vec<&str> = Family::ALL.iter().map(Family::label).collect();
+        assert_eq!(
+            labels,
+            [
+                "Apps & browsers",
+                "Developer tools",
+                "System & logs",
+                "Your files",
+                "Leftovers"
+            ]
+        );
+    }
+
+    /// The table is registration: a provider without an entry, an entry
+    /// without a provider, or a desktop decision that differs from what the
+    /// provider enforces fails here.
+    #[test]
+    fn every_provider_has_a_category_entry_that_matches_it() {
+        let runner: Arc<dyn CommandRunner> =
+            Arc::new(crate::runner::test_support::MockRunner::new());
+        let providers = all_providers_with(&crate::options::CleanOptions::default(), runner);
+        let ids: Vec<&str> = providers.iter().map(|p| p.id()).collect();
+        let table: Vec<&str> = CATEGORIES.iter().map(|info| info.id).collect();
+        assert_eq!(ids, table);
+        assert_eq!(known_category_ids(), table.as_slice());
+        for provider in &providers {
+            let info = category_info(provider.id()).unwrap();
+            assert_eq!(
+                desktop_report_only(provider.as_ref()),
+                info.report_only,
+                "{}",
+                provider.id()
+            );
         }
     }
 
     #[test]
-    fn family_id_and_label_stable() {
-        assert_eq!(Family::Dev.id(), "dev");
-        assert_eq!(Family::UserStorage.id(), "user-storage");
-        assert_eq!(Family::System.id(), "system");
-        assert_eq!(Family::Dev.label(), "Dev caches");
-        assert_eq!(Family::UserStorage.label(), "User storage");
-        assert_eq!(Family::System.label(), "System leftovers");
+    fn sections_follow_the_desktop_decision_and_comes_back() {
+        let section = |id| category_info(id).unwrap().section();
+        assert_eq!(section("cargo"), TrustSection::Rebuilt);
+        assert_eq!(section("rust-targets"), TrustSection::Rebuilt);
+        assert_eq!(section("user-caches"), TrustSection::Rebuilt);
+        assert_eq!(section("downloads-old"), TrustSection::YourFiles);
+        assert_eq!(section("xcode-archives"), TrustSection::YourFiles);
+        assert_eq!(section("docker"), TrustSection::ReportOnly);
+        assert_eq!(section("app-orphans"), TrustSection::ReportOnly);
+        assert_eq!(section("trash"), TrustSection::ReportOnly);
+        for info in CATEGORIES {
+            if info.comes_back == ComesBack::NotRecoverable {
+                assert_ne!(info.section(), TrustSection::Rebuilt, "{}", info.id);
+            }
+        }
     }
 
-    /// Deliberate desktop decision for every category. A new provider fails
-    /// this test until it is added here, so eligibility is never implicit.
-    const DESKTOP_TRASH: &[(&str, Option<ReportOnly>)] = &[
-        ("user-logs", None),
-        ("xcode-derived", None),
-        ("user-caches", None),
-        ("xcode-archives", None),
-        ("xcode-devicesupport", None),
-        ("cargo", None),
-        ("npm", None),
-        ("pnpm", None),
-        ("yarn", None),
-        ("node-modules", None),
-        ("python-caches", None),
-        ("rust-targets", None),
-        ("gradle-maven", None),
-        ("jetbrains", None),
-        ("vscode", None),
-        ("ios-simulators", None),
-        // Destructive: `xcrun simctl delete` removes the device for good.
-        ("simulator-devices", Some(ReportOnly::Destructive)),
-        ("android-sdk", None),
-        ("go-cache", None),
-        // Runs `docker image prune` / `docker builder prune`, not a per-path move.
-        ("docker", Some(ReportOnly::NotPerPathTrash)),
-        // Destructive: `docker volume prune` deletes container data.
-        ("docker-volumes", Some(ReportOnly::Destructive)),
-        ("downloads-old", None),
-        ("screenshots-old", None),
-        ("mail-attachments", None),
-        ("streaming-caches", None),
-        ("chat-caches", None),
-        ("browser-caches", None),
-        ("quarantine", None),
-        ("crash-reports", None),
-        // Folder names are matched against bundle IDs, so live data such as
-        // `Code` (VS Code) or `AddressBook` is flagged as orphaned.
-        ("app-orphans", Some(ReportOnly::UnreliableMatch)),
-        // Destructive: `tmutil deletelocalsnapshots` and Empty Trash.
-        ("time-machine-local", Some(ReportOnly::Destructive)),
-        ("font-quicklook-caches", None),
-        ("trash", Some(ReportOnly::Destructive)),
-    ];
-
     #[test]
-    fn every_category_has_a_deliberate_desktop_decision() {
-        let decided: Vec<&str> = DESKTOP_TRASH.iter().map(|(id, _)| *id).collect();
-        assert_eq!(decided, known_category_ids());
-        let runner: Arc<dyn CommandRunner> =
-            Arc::new(crate::runner::test_support::MockRunner::new());
-        let providers = all_providers_with(&crate::options::CleanOptions::default(), runner);
-        assert_eq!(providers.len(), DESKTOP_TRASH.len());
-        for provider in providers {
-            let expected = DESKTOP_TRASH
-                .iter()
-                .find(|(id, _)| *id == provider.id())
-                .map(|(_, value)| *value);
-            assert_eq!(
-                Some(desktop_report_only(provider.as_ref())),
-                expected,
+    fn every_family_has_a_category() {
+        for family in Family::ALL {
+            assert!(
+                CATEGORIES.iter().any(|info| info.family == family),
                 "{}",
-                provider.id()
+                family.id()
             );
         }
     }

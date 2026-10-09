@@ -18,7 +18,7 @@ pub fn pick_categories(groups: &[CategoryGroup]) -> Result<Vec<usize>> {
     pick_categories_grouped(groups)
 }
 
-/// Groups `groups` by family (Dev → UserStorage → System) and renders a
+/// Groups `groups` by family (in `Family::ALL` order) and renders a
 /// MultiSelect with disabled family-header rows + indented category rows.
 /// Returns indices into the ORIGINAL `groups` slice.
 pub fn pick_categories_grouped(groups: &[CategoryGroup]) -> Result<Vec<usize>> {
@@ -78,12 +78,11 @@ pub fn pick_categories_grouped(groups: &[CategoryGroup]) -> Result<Vec<usize>> {
     Ok(out)
 }
 
-/// Group group indices by family in canonical order: Dev, UserStorage, System.
+/// Group group indices by family in `Family::ALL` order.
 /// Empty families are omitted.
 pub(crate) fn group_by_family(groups: &[CategoryGroup]) -> Vec<(Family, Vec<usize>)> {
-    let order = [Family::Dev, Family::UserStorage, Family::System];
     let mut out: Vec<(Family, Vec<usize>)> = Vec::new();
-    for fam in order {
+    for fam in Family::ALL {
         let mut indices: Vec<usize> = Vec::new();
         for (i, g) in groups.iter().enumerate() {
             if category_family(&g.id) == fam {
@@ -213,16 +212,16 @@ mod tests {
     }
 
     #[test]
-    fn group_by_family_orders_dev_first() {
+    fn group_by_family_follows_family_order() {
         let groups = vec![
             group("user-logs", RiskLevel::Safe, 100),
             group("cargo", RiskLevel::Review, 200),
-            group("trash", RiskLevel::Destructive, 300),
+            group("crash-reports", RiskLevel::Safe, 300),
         ];
         let buckets = group_by_family(&groups);
-        assert_eq!(buckets.len(), 2, "Dev + System present, no UserStorage");
-        assert_eq!(buckets[0].0, Family::Dev);
-        assert_eq!(buckets[1].0, Family::System);
+        assert_eq!(buckets.len(), 2, "empty families are omitted");
+        assert_eq!(buckets[0].0, Family::DeveloperTools);
+        assert_eq!(buckets[1].0, Family::SystemLogs);
         assert_eq!(buckets[0].1, vec![1]);
         assert_eq!(buckets[1].1, vec![0, 2]);
     }
@@ -235,9 +234,9 @@ mod tests {
             group("trash", RiskLevel::Destructive, 300),
         ];
         let buckets = group_by_family(&groups);
-        assert_eq!(buckets[0].0, Family::Dev);
+        assert_eq!(buckets[0].0, Family::DeveloperTools);
         assert_eq!(buckets[0].1.len(), 2);
-        assert_eq!(buckets[1].0, Family::System);
+        assert_eq!(buckets[1].0, Family::Leftovers);
         assert_eq!(buckets[1].1.len(), 1);
     }
 

@@ -2,7 +2,7 @@
 
 use tiny_core::clean::checked_execute::{ItemOutcome, SkipReason, StopReason};
 use tiny_core::clean::finder_trash::TrashError;
-use tiny_core::clean::providers::ReportOnly;
+use tiny_core::clean::providers::{ReportOnly, TrustSection};
 use tiny_core::clean::types::{ComesBack, Evidence, RiskLevel};
 use tiny_core::options::CleanOptions;
 
@@ -115,7 +115,8 @@ pub struct FfiCleanCategory {
     /// Why this category's items are candidates; English diagnostic text
     /// Swift may show or replace with its own copy.
     pub inclusion_reason: String,
-    /// `dev`, `user-storage` or `system`; `None` for an unregistered ID.
+    /// `apps-browsers`, `developer-tools`, `system-logs`, `your-files` or
+    /// `leftovers`; `None` for an unregistered ID.
     pub family: Option<String>,
     pub risk: FfiRisk,
     pub status: FfiCategoryStatus,
@@ -129,6 +130,18 @@ pub struct FfiCleanCategory {
     pub refused: Vec<FfiRefusedPath>,
     /// `None` for an unregistered ID.
     pub comes_back: Option<FfiComesBack>,
+    /// The trust group the tile belongs in; `None` for an unregistered ID.
+    #[uniffi(default = None)]
+    pub section: Option<FfiTrustSection>,
+}
+
+/// Desktop trust group: report-only first, then whether something
+/// recreates the items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiTrustSection {
+    Rebuilt,
+    YourFiles,
+    ReportOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -308,6 +321,16 @@ impl From<ComesBack> for FfiComesBack {
             ComesBack::AppRecreates => Self::AppRecreates,
             ComesBack::TrashOnly => Self::TrashOnly,
             ComesBack::NotRecoverable => Self::NotRecoverable,
+        }
+    }
+}
+
+impl From<TrustSection> for FfiTrustSection {
+    fn from(section: TrustSection) -> Self {
+        match section {
+            TrustSection::Rebuilt => Self::Rebuilt,
+            TrustSection::YourFiles => Self::YourFiles,
+            TrustSection::ReportOnly => Self::ReportOnly,
         }
     }
 }

@@ -30,6 +30,10 @@ Rust workspace with a shared [core](crates/tiny-core/src/lib.rs), a
 - Every Swift-side mutation claims the single [ActionState](macos/Sources/Tiny/ProcessActions.swift)
   guard and writes a per-operation [in-flight marker](macos/Sources/Tiny/InFlightMarker.swift)
   before acting; nothing is replayed at launch.
+- A new cleanup category implements `CleanProvider`, is added to `all_providers_with`
+  and gets one row in [`CATEGORIES`](crates/tiny-core/src/clean/providers/mod.rs)
+  (family, `comes_back`, desktop decision). Ids and trust sections derive from that
+  row; a test fails when the row and the provider disagree.
 - Harness checks, snapshots and smoke flags never call the real `cleanExecute` (it
   moves real files through Finder); use `FakeCleanEngine`. Real `cleanDiscover` and
   `cleanPreview` are read-only. PC-C3 (review items are never moved unless explicitly

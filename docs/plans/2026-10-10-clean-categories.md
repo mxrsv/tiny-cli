@@ -33,6 +33,11 @@ C1 lands before C2–C6. C8–C9 follow C7.
   [clean trust plan](2026-10-09-clean-trust-evidence.md): `main` `1baeb67`, `8b4842a`;
   `feat/clean-trust` `c91e953`, `8463af1`, `978e531`, `f4338de`, `0631800`. Pushed to
   `origin` with `main`, `feat/native-desktop` and `feat/clean-trust`.
+- 2026-10-10: C1 done on branch `claude/category-taxonomy-581gt9` (draft PR into
+  `feat/clean-trust`): `CATEGORIES` table, `TrustSection`, FFI `family` ids renamed and
+  `section` added with a Swift default of `nil`, so existing Swift call sites build. AI
+  models is not a family yet (FM1: once its providers exist). Trash and `app-orphans` are
+  Leftovers; `user-caches` is Apps & browsers.
 
 ## Handoff
 
