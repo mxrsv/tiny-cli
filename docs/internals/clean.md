@@ -42,7 +42,10 @@ and `is_idle` for project caches.
 `--category` is given, in which case naming a category is treated as consent and the
 `--include-*` flags are ignored. For each selected provider it skips those whose
 `available()` is false (the tool is not installed) and those whose gating app is running,
-then keeps only providers that found items.
+then keeps only providers that found items. A provider whose `discover` returns an error is
+recorded in `failed` and reported; it never stops the other providers. Providers open their
+roots with `read_root`, which treats a missing root as empty but any other read error (a
+privacy denial) as an error, so an unreadable category is not shown as empty.
 
 ## Mapping actions
 

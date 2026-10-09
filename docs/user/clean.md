@@ -64,6 +64,10 @@ At the end tiny prints how many paths it removed and lists any it could not.
   `~/Workspace`.
 - A category is skipped while its app is open — for example Xcode categories while Xcode
   runs, `mail-attachments` while Mail runs. tiny tells you which app to quit.
+- In `user-caches`, a folder is left out while the app that owns it is open (`Google` while
+  Google Chrome runs). macOS system caches are never listed.
+- A category tiny cannot read, usually because Terminal lacks Full Disk Access, is listed as
+  `could not scan` with the reason; the other categories are still scanned.
 
 ## Safety
 
