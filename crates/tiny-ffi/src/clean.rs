@@ -21,8 +21,7 @@ use tiny_core::clean::finder_trash::{FinderTrash, Trash};
 use tiny_core::clean::fs_safe::{fingerprint, PathFingerprint};
 use tiny_core::clean::process::{AppProbe, RunnerProbe};
 use tiny_core::clean::providers::{
-    all_providers_with, category_family, comes_back, desktop_report_only, known_category_ids,
-    CleanProvider, ReportOnly,
+    all_providers_with, category_info, desktop_report_only, CleanProvider, ReportOnly,
 };
 use tiny_core::clean::scan_context::{ScanContext, Unreadable};
 use tiny_core::clean::trash_plan::{
@@ -371,15 +370,12 @@ fn store_category(
     desktop_action: FfiDesktopAction,
     candidates: &mut HashMap<String, StoredCandidate>,
 ) -> FfiCleanCategory {
-    let family = known_category_ids()
-        .contains(&category.id.as_str())
-        .then(|| category_family(&category.id).id().to_string());
-    let comes_back = comes_back(&category.id).map(Into::into);
+    let info = category_info(&category.id);
     let mut ffi = FfiCleanCategory {
         id: category.id,
         label: category.label,
         inclusion_reason: category.inclusion_reason,
-        family,
+        family: info.map(|info| info.family.id().to_string()),
         risk: category.risk.into(),
         status: FfiCategoryStatus::Found,
         desktop_action,
@@ -387,7 +383,8 @@ fn store_category(
         total_bytes: 0,
         unreadable: Vec::new(),
         refused: Vec::new(),
-        comes_back,
+        comes_back: info.map(|info| info.comes_back.into()),
+        section: info.map(|info| info.section().into()),
     };
     match category.outcome {
         CategoryOutcome::Found {

@@ -225,6 +225,7 @@ fn preview_is_built_from_discovered_ids_only() {
     assert_eq!(category.desktop_action, FfiDesktopAction::MoveToTrash);
     assert_eq!(category.total_bytes, 8);
     assert_eq!(category.family, None, "fixture IDs are not registered");
+    assert_eq!(category.section, None);
     assert_eq!(category.inclusion_reason, "fixture");
 
     let preview = session.clean_preview(ids(&discovery)).unwrap();
@@ -286,6 +287,44 @@ fn overlapping_selections_are_excluded_with_a_reason() {
 }
 
 #[test]
+fn registered_categories_carry_family_section_and_comes_back() {
+    let dir = fixture_dir("taxonomy", &["a"], 1);
+    let providers: Vec<Box<dyn CleanProvider>> = vec![
+        Box::new(Fixture::new("cargo", &dir)),
+        Box::new(Fixture::new("downloads-old", &dir)),
+        Box::new(Fixture::new("browser-caches", &dir)),
+    ];
+    let session = TinySession::new();
+    let discovery = discover(&session, &providers).unwrap();
+    let facts: Vec<_> = discovery
+        .categories
+        .iter()
+        .map(|c| (c.family.as_deref(), c.section, c.comes_back.clone()))
+        .collect();
+    assert_eq!(
+        facts,
+        vec![
+            (
+                Some("developer-tools"),
+                Some(FfiTrustSection::Rebuilt),
+                Some(FfiComesBack::Redownload)
+            ),
+            (
+                Some("your-files"),
+                Some(FfiTrustSection::YourFiles),
+                Some(FfiComesBack::TrashOnly)
+            ),
+            (
+                Some("apps-browsers"),
+                Some(FfiTrustSection::Rebuilt),
+                Some(FfiComesBack::AppRecreates)
+            ),
+        ]
+    );
+    remove(&dir);
+}
+
+#[test]
 fn report_only_categories_cannot_be_previewed() {
     let dir = fixture_dir("report-only", &[], 0);
     // Like docker: a tool placeholder in a provider that is not opted in.
@@ -314,6 +353,9 @@ fn report_only_categories_cannot_be_previewed() {
             },
         ]
     );
+    for category in &discovery.categories {
+        assert_eq!(category.section, Some(FfiTrustSection::ReportOnly));
+    }
     for category in &discovery.categories {
         let id = category.candidates[0].id.clone();
         assert!(matches!(
