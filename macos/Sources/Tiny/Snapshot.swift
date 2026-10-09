@@ -208,7 +208,7 @@ private struct DisplayCleanEngine: CleanEngine {
                 item("dl-env", "\(downloads)/env.txt", 1_024, .review,
                      [.modified(at: day(2026, 7, 3)), .sensitive(reason: "environment file with secrets")])]),
             category("mail-attachments", "Mail attachments", "Attachments Mail saved to disk.", .review, .trashOnly, []),
-            category("docker", "Docker data", "Docker images and volumes.", .review, .notRecoverable, [
+            category("docker", "Docker images/build cache", "Docker images and build cache.", .review, .redownload, [
                 item("docker-a", "\(home)/Library/Containers/com.docker.docker/Data/vms", 12_000_000_000, .review, seen)],
                      desktop: .reportOnly(reason: .notPerPathTrash))]
     }

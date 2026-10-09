@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::engine_error;
@@ -10,7 +10,9 @@ use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "docker";
-const LABEL: &str = "Docker images/build/volumes";
+const LABEL: &str = "Docker images/build cache";
+const VOLUMES_ID: &str = "docker-volumes";
+const VOLUMES_LABEL: &str = "Docker volumes (data)";
 const APP: &str = "Docker Desktop";
 
 /// Synthetic placeholders so `CleanItem.path` stays meaningful in the UI
@@ -20,6 +22,10 @@ const PLACEHOLDER_IMAGES: &str = "<docker:images>";
 const PLACEHOLDER_BUILD: &str = "<docker:build-cache>";
 const PLACEHOLDER_VOLUMES: &str = "<docker:volumes>";
 
+const CACHE_KINDS: &[DfKind] = &[DfKind::Images, DfKind::BuildCache];
+const VOLUME_KINDS: &[DfKind] = &[DfKind::Volumes];
+
+/// Images and build cache: Docker pulls or rebuilds them on demand.
 pub struct Docker {
     runner: Arc<dyn CommandRunner>,
 }
@@ -49,7 +55,7 @@ impl CleanProvider for Docker {
         LABEL
     }
     fn inclusion_reason(&self) -> String {
-        "Unused Docker images, build cache and volumes reported by docker system df".into()
+        "Unused Docker images and build cache reported by docker system df".into()
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Review
@@ -64,75 +70,148 @@ impl CleanProvider for Docker {
         Some("docker")
     }
     fn discover(&self, _ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
-        // `docker system df --format '{{json .}}'` emits one JSON object
-        // per resource type (Images, Containers, Local Volumes, Build
-        // Cache). Daemon-down → non-zero exit → an error the checked
-        // discovery reports; the CLI still shows nothing for it.
-        let out = run_tool(
+        discover_kinds(
             self.runner.as_ref(),
-            "docker",
-            &["system", "df", "--format", "{{json .}}"],
-        )?;
-        if !out.success() {
-            return Err(engine_error!(
-                "docker system df failed: {}",
-                out.stderr.trim()
-            ));
-        }
-        let mut items = Vec::new();
-        for line in out.stdout.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            if let Some((kind, size)) = parse_df_line(trimmed) {
-                let placeholder = match kind {
-                    DfKind::Images => PLACEHOLDER_IMAGES,
-                    DfKind::BuildCache => PLACEHOLDER_BUILD,
-                    DfKind::Volumes => PLACEHOLDER_VOLUMES,
-                };
-                if size == 0 {
-                    continue;
-                }
-                items.push(CleanItem {
-                    category_id: ID.to_string(),
-                    category_label: LABEL.to_string(),
-                    path: PathBuf::from(placeholder),
-                    size,
-                    risk: RiskLevel::Review,
-                    evidence: Vec::new(),
-                });
-            }
-        }
-        Ok(items)
+            CACHE_KINDS,
+            ID,
+            LABEL,
+            RiskLevel::Review,
+        )
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
-        if matches!(action, ExecAction::EmptyTrash) {
-            return Err(engine_error!("docker provider does not accept EmptyTrash"));
-        }
-        if items.is_empty() {
-            return Ok(ExecReport::default());
-        }
-        // Docker has no Trash semantics. Both Trash and HardDelete map to
-        // the same prune command; warn user when they picked Trash.
-
-        let out = self
-            .runner
-            .run("docker", &["system", "prune", "-af", "--volumes"]);
-        let mut report = ExecReport::default();
-        if out.success {
-            for item in items {
-                report.removed_paths.push(item.path.clone());
-            }
-        } else {
-            for item in items {
-                report
-                    .failed
-                    .push((item.path.clone(), "docker system prune failed".into()));
-            }
-        }
-        Ok(report)
+        prune(self.runner.as_ref(), items, action, CACHE_KINDS, ID)
     }
+}
+
+/// Volumes hold container data (databases, uploads) that nothing brings
+/// back, so they are a separate `destructive` category: listed only with
+/// `--include-destructive` or `--category docker-volumes`.
+pub struct DockerVolumes {
+    runner: Arc<dyn CommandRunner>,
+}
+
+impl DockerVolumes {
+    pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
+        Self { runner }
+    }
+}
+
+impl CleanProvider for DockerVolumes {
+    fn id(&self) -> &'static str {
+        VOLUMES_ID
+    }
+    fn label(&self) -> &'static str {
+        VOLUMES_LABEL
+    }
+    fn inclusion_reason(&self) -> String {
+        "Docker volumes no container uses, reported by docker system df; they hold container data"
+            .into()
+    }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Destructive
+    }
+    fn requires_app_quit(&self) -> Option<&'static str> {
+        Some(APP)
+    }
+    fn available(&self) -> bool {
+        self.runner.which("docker")
+    }
+    fn required_tool(&self) -> Option<&'static str> {
+        Some("docker")
+    }
+    fn discover(&self, _ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
+        discover_kinds(
+            self.runner.as_ref(),
+            VOLUME_KINDS,
+            VOLUMES_ID,
+            VOLUMES_LABEL,
+            RiskLevel::Destructive,
+        )
+    }
+    fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
+        prune(
+            self.runner.as_ref(),
+            items,
+            action,
+            VOLUME_KINDS,
+            VOLUMES_ID,
+        )
+    }
+}
+
+/// Lists the resource types in `kinds` from `docker system df --format
+/// '{{json .}}'`, which emits one JSON object per type (Images,
+/// Containers, Local Volumes, Build Cache). Daemon down → non-zero exit →
+/// an error the checked discovery reports; the CLI still shows nothing.
+fn discover_kinds(
+    runner: &dyn CommandRunner,
+    kinds: &[DfKind],
+    id: &str,
+    label: &str,
+    risk: RiskLevel,
+) -> Result<Vec<CleanItem>> {
+    let out = run_tool(
+        runner,
+        "docker",
+        &["system", "df", "--format", "{{json .}}"],
+    )?;
+    if !out.success() {
+        return Err(engine_error!(
+            "docker system df failed: {}",
+            out.stderr.trim()
+        ));
+    }
+    let items = out
+        .stdout
+        .lines()
+        .filter_map(|line| parse_df_line(line.trim()))
+        .filter(|(kind, size)| kinds.contains(kind) && *size > 0)
+        .map(|(kind, size)| CleanItem {
+            category_id: id.to_string(),
+            category_label: label.to_string(),
+            path: PathBuf::from(kind.placeholder()),
+            size,
+            risk,
+            evidence: Vec::new(),
+        })
+        .collect();
+    Ok(items)
+}
+
+/// Runs one targeted prune per selected placeholder, so picking images
+/// never touches volumes, containers or networks the way `docker system
+/// prune --volumes` would. A placeholder outside `kinds` is refused.
+/// Docker has no Trash semantics: Trash and HardDelete both prune; the CLI
+/// warns when the user picked Trash.
+fn prune(
+    runner: &dyn CommandRunner,
+    items: &[CleanItem],
+    action: ExecAction,
+    kinds: &[DfKind],
+    id: &str,
+) -> Result<ExecReport> {
+    if matches!(action, ExecAction::EmptyTrash) {
+        return Err(engine_error!("{} provider does not accept EmptyTrash", id));
+    }
+    let mut report = ExecReport::default();
+    for item in items {
+        match DfKind::from_placeholder(&item.path).filter(|k| kinds.contains(k)) {
+            Some(kind) => {
+                let args = kind.prune_args();
+                if runner.run("docker", args).success {
+                    report.removed_paths.push(item.path.clone());
+                } else {
+                    let reason = format!("docker {} failed", args.join(" "));
+                    report.failed.push((item.path.clone(), reason));
+                }
+            }
+            None => {
+                let reason = format!("not a {} resource", id);
+                report.failed.push((item.path.clone(), reason));
+            }
+        }
+    }
+    Ok(report)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,6 +219,32 @@ enum DfKind {
     Images,
     BuildCache,
     Volumes,
+}
+
+impl DfKind {
+    fn placeholder(self) -> &'static str {
+        match self {
+            DfKind::Images => PLACEHOLDER_IMAGES,
+            DfKind::BuildCache => PLACEHOLDER_BUILD,
+            DfKind::Volumes => PLACEHOLDER_VOLUMES,
+        }
+    }
+
+    fn from_placeholder(path: &Path) -> Option<Self> {
+        [DfKind::Images, DfKind::BuildCache, DfKind::Volumes]
+            .into_iter()
+            .find(|kind| path == Path::new(kind.placeholder()))
+    }
+
+    /// `-a` on `volume prune` (Docker 23+) also removes unused named
+    /// volumes, which is what `system df` counts.
+    fn prune_args(self) -> &'static [&'static str] {
+        match self {
+            DfKind::Images => &["image", "prune", "-af"],
+            DfKind::BuildCache => &["builder", "prune", "-af"],
+            DfKind::Volumes => &["volume", "prune", "-af"],
+        }
+    }
 }
 
 /// Parses one line of `docker system df --format '{{json .}}'`. The JSON
@@ -256,25 +361,156 @@ mod tests {
         assert!(!p.available());
     }
 
-    #[test]
-    fn docker_discover_parses_multi_line_output() {
-        let out = "\
+    const DF_ARGS: &[&str] = &["system", "df", "--format", "{{json .}}"];
+    const DF_OUT: &str = "\
 {\"Type\":\"Images\",\"Size\":\"1GB\"}
 {\"Type\":\"Containers\",\"Size\":\"0B\"}
 {\"Type\":\"Local Volumes\",\"Size\":\"500MB\"}
 {\"Type\":\"Build Cache\",\"Size\":\"2GB\"}
 ";
-        let runner = Arc::new(MockRunner::new().with_which("docker").with_exit(
-            "docker",
-            &["system", "df", "--format", "{{json .}}"],
-            0,
-            out,
-        ));
-        let p = Docker::with_runner(runner);
+
+    fn df_runner() -> MockRunner {
+        MockRunner::new()
+            .with_which("docker")
+            .with_exit("docker", DF_ARGS, 0, DF_OUT)
+    }
+
+    /// Every command the provider ran, bounded or not.
+    fn calls(runner: &MockRunner) -> Vec<String> {
+        let mut calls = runner.output_calls.lock().unwrap().clone();
+        calls.extend(runner.run_calls.lock().unwrap().iter().cloned());
+        calls
+    }
+
+    fn ran(runner: &MockRunner, needle: &str) -> bool {
+        calls(runner).iter().any(|c| c.contains(needle))
+    }
+
+    #[test]
+    fn docker_discover_lists_images_and_build_cache_only() {
+        let p = Docker::with_runner(Arc::new(df_runner()));
         let items = p.discover(&ScanContext::unchecked()).unwrap();
-        // 3 items (Images, Local Volumes, Build Cache); Containers skipped.
-        assert_eq!(items.len(), 3);
+        // Containers and Local Volumes are not part of `docker`.
+        let paths: Vec<_> = items.iter().map(|i| i.path.clone()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from(PLACEHOLDER_IMAGES),
+                PathBuf::from(PLACEHOLDER_BUILD)
+            ]
+        );
         let total: u64 = items.iter().map(|i| i.size).sum();
-        assert_eq!(total, 1_000_000_000 + 500_000_000 + 2_000_000_000);
+        assert_eq!(total, 1_000_000_000 + 2_000_000_000);
+    }
+
+    #[test]
+    fn docker_volumes_is_its_own_destructive_category() {
+        let p = DockerVolumes::with_runner(Arc::new(df_runner()));
+        assert_eq!(p.risk(), RiskLevel::Destructive);
+        assert_eq!(p.requires_app_quit(), Some(APP));
+        assert!(known_category_ids().contains(&VOLUMES_ID));
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path, PathBuf::from(PLACEHOLDER_VOLUMES));
+        assert_eq!(items[0].risk, RiskLevel::Destructive);
+        assert_eq!(items[0].size, 500_000_000);
+    }
+
+    #[test]
+    fn docker_prunes_only_the_selected_kind() {
+        let runner =
+            Arc::new(df_runner().with_response("docker", &["image", "prune", "-af"], true, ""));
+        let p = Docker::with_runner(runner.clone());
+        let images: Vec<_> = p
+            .discover(&ScanContext::unchecked())
+            .unwrap()
+            .into_iter()
+            .filter(|i| i.path == Path::new(PLACEHOLDER_IMAGES))
+            .collect();
+        let report = p.execute(&images, ExecAction::Trash).unwrap();
+        assert_eq!(
+            report.removed_paths,
+            vec![PathBuf::from(PLACEHOLDER_IMAGES)]
+        );
+        assert!(report.failed.is_empty());
+        assert_eq!(
+            *runner.run_calls.lock().unwrap(),
+            vec!["docker image prune -af"]
+        );
+        assert!(!ran(&runner, "builder prune"));
+        assert!(!ran(&runner, "volume"));
+        assert!(!ran(&runner, "system prune"));
+    }
+
+    #[test]
+    fn docker_runs_one_prune_per_selected_kind() {
+        let runner = Arc::new(
+            df_runner()
+                .with_response("docker", &["image", "prune", "-af"], true, "")
+                .with_response("docker", &["builder", "prune", "-af"], true, ""),
+        );
+        let p = Docker::with_runner(runner.clone());
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
+        let report = p.execute(&items, ExecAction::HardDelete).unwrap();
+        assert_eq!(report.removed_paths.len(), 2);
+        assert_eq!(
+            *runner.run_calls.lock().unwrap(),
+            vec!["docker image prune -af", "docker builder prune -af"]
+        );
+        assert!(!ran(&runner, "system prune"));
+    }
+
+    #[test]
+    fn docker_refuses_a_volumes_placeholder() {
+        let runner = Arc::new(MockRunner::new().with_which("docker"));
+        let p = Docker::with_runner(runner.clone());
+        let item = CleanItem {
+            category_id: ID.to_string(),
+            category_label: LABEL.to_string(),
+            path: PathBuf::from(PLACEHOLDER_VOLUMES),
+            size: 1,
+            risk: RiskLevel::Review,
+            evidence: Vec::new(),
+        };
+        let report = p.execute(&[item], ExecAction::HardDelete).unwrap();
+        assert!(report.removed_paths.is_empty());
+        assert_eq!(report.failed.len(), 1);
+        assert!(calls(&runner).is_empty());
+    }
+
+    #[test]
+    fn docker_volumes_refuses_an_images_placeholder_and_empty_trash() {
+        let runner = Arc::new(MockRunner::new().with_which("docker"));
+        let p = DockerVolumes::with_runner(runner.clone());
+        let item = CleanItem {
+            category_id: VOLUMES_ID.to_string(),
+            category_label: VOLUMES_LABEL.to_string(),
+            path: PathBuf::from(PLACEHOLDER_IMAGES),
+            size: 1,
+            risk: RiskLevel::Destructive,
+            evidence: Vec::new(),
+        };
+        let report = p
+            .execute(std::slice::from_ref(&item), ExecAction::HardDelete)
+            .unwrap();
+        assert_eq!(report.failed[0].1, "not a docker-volumes resource");
+        assert!(p.execute(&[item], ExecAction::EmptyTrash).is_err());
+        assert!(calls(&runner).is_empty());
+    }
+
+    #[test]
+    fn docker_volumes_prune_reports_failure() {
+        // `volume prune` not mocked → the runner reports failure.
+        let runner = Arc::new(df_runner());
+        let p = DockerVolumes::with_runner(runner.clone());
+        let items = p.discover(&ScanContext::unchecked()).unwrap();
+        let report = p.execute(&items, ExecAction::HardDelete).unwrap();
+        assert!(report.removed_paths.is_empty());
+        assert_eq!(report.failed[0].1, "docker volume prune -af failed");
+        assert_eq!(
+            *runner.run_calls.lock().unwrap(),
+            vec!["docker volume prune -af"]
+        );
+        assert!(!ran(&runner, "system prune"));
     }
 }

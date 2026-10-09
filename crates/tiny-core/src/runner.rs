@@ -294,11 +294,12 @@ pub mod test_support {
 
     /// Maps `(bin, args.join(" "))` to canned results. Unknown `run`
     /// invocations return `(false, "")`; unknown `output` invocations return
-    /// `NotFound`. `output_calls` records every `output` invocation.
+    /// `NotFound`. `run_calls` and `output_calls` record every invocation.
     pub struct MockRunner {
         pub which_set: Mutex<Vec<String>>,
         pub responses: Mutex<HashMap<String, (bool, String)>>,
         pub outputs: Mutex<HashMap<String, Result<CommandOutcome, CommandError>>>,
+        pub run_calls: Mutex<Vec<String>>,
         pub output_calls: Mutex<Vec<String>>,
     }
 
@@ -308,6 +309,7 @@ pub mod test_support {
                 which_set: Mutex::new(Vec::new()),
                 responses: Mutex::new(HashMap::new()),
                 outputs: Mutex::new(HashMap::new()),
+                run_calls: Mutex::new(Vec::new()),
                 output_calls: Mutex::new(Vec::new()),
             }
         }
@@ -359,6 +361,7 @@ pub mod test_support {
         }
         fn run(&self, bin: &str, args: &[&str]) -> CommandOutput {
             let key = format!("{} {}", bin, args.join(" "));
+            self.run_calls.lock().unwrap().push(key.clone());
             match self.responses.lock().unwrap().get(&key) {
                 Some((success, stdout)) => CommandOutput {
                     success: *success,

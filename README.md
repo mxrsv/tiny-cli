@@ -178,7 +178,7 @@ sockets are invisible, so no owner does not mean the port is free.
 tiny clean                              # picker → plan → action menu
 tiny clean --dry-run                    # show plan and exit, no prompt
 tiny clean --include-review             # also list review-risk caches
-tiny clean --include-destructive        # also list Trash + tmutil snapshots
+tiny clean --include-destructive        # also list Trash, tmutil snapshots, Docker volumes
 tiny clean --review-paths               # drill-down picker per path before action
 tiny clean --idle-days 60               # raise idle threshold for project caches
 tiny clean --category node-modules      # interactive, scoped to one category
@@ -186,12 +186,12 @@ tiny clean --category trash --hard      # the only sanctioned way to empty Trash
 TINY_CONFIRM_HARD=1 tiny clean --category cargo --hard -y   # non-interactive permanent delete
 ```
 
-Categories are grouped into three families in the picker (31 total):
+Categories are grouped into three families in the picker (32 total):
 
-**Dev caches (17)** — `cargo`, `npm`, `pnpm`, `yarn`, `node-modules`,
+**Dev caches (18)** — `cargo`, `npm`, `pnpm`, `yarn`, `node-modules`,
 `python-caches`, `rust-targets`, `gradle-maven`, `jetbrains`, `vscode`,
-`ios-simulators`, `android-sdk`, `go-cache`, `docker`, `xcode-derived`,
-`xcode-archives`, `xcode-devicesupport`.
+`ios-simulators`, `android-sdk`, `go-cache`, `docker`, `docker-volumes`,
+`xcode-derived`, `xcode-archives`, `xcode-devicesupport`.
 
 **User storage (6)** — `downloads-old`, `screenshots-old`,
 `mail-attachments`, `streaming-caches`, `chat-caches`, `browser-caches`.
@@ -202,10 +202,12 @@ Categories are grouped into three families in the picker (31 total):
 
 The default picker shows only **safe** categories. Add `--include-review`
 for developer caches and other items that may want manual review. Add
-`--include-destructive` to surface `trash` and `time-machine-local`
-(snapshots are not recoverable). Use `--category <id>` to target a single
-category — repeating the flag is fine (`--category user-logs --category
-xcode-derived`).
+`--include-destructive` to surface `trash`, `time-machine-local` and
+`docker-volumes` (snapshots and volumes are not recoverable). `docker`
+prunes only the selected types (`docker image prune -af`, `docker builder
+prune -af`); `docker-volumes` runs `docker volume prune -af`. Use
+`--category <id>` to target a single category — repeating the flag is fine
+(`--category user-logs --category xcode-derived`).
 
 **Flags that affect discovery:**
 

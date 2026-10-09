@@ -75,7 +75,7 @@ pub fn category_family(category_id: &str) -> Family {
         "node-modules" | "python-caches" | "rust-targets" => Family::Dev,
         "gradle-maven" | "jetbrains" | "vscode" => Family::Dev,
         "ios-simulators" | "android-sdk" => Family::Dev,
-        "go-cache" | "docker" => Family::Dev,
+        "go-cache" | "docker" | "docker-volumes" => Family::Dev,
         "xcode-derived" | "xcode-archives" | "xcode-devicesupport" => Family::Dev,
         // UserStorage family
         "downloads-old" | "screenshots-old" | "mail-attachments" => Family::UserStorage,
@@ -114,7 +114,7 @@ pub fn comes_back(category_id: &str) -> Option<ComesBack> {
             Some(ComesBack::TrashOnly)
         }
         "app-orphans" => Some(ComesBack::TrashOnly),
-        "time-machine-local" | "trash" => Some(ComesBack::NotRecoverable),
+        "time-machine-local" | "trash" | "docker-volumes" => Some(ComesBack::NotRecoverable),
         _ => None,
     }
 }
@@ -252,6 +252,7 @@ pub fn all_providers_with(
         Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
         Box::new(go_cache::GoCache::with_runner(runner.clone())),
         Box::new(docker::Docker::with_runner(runner.clone())),
+        Box::new(docker::DockerVolumes::with_runner(runner.clone())),
         Box::new(downloads_old::DownloadsOld::with_runner(
             opts.idle_days,
             runner.clone(),
@@ -299,6 +300,7 @@ pub fn known_category_ids() -> &'static [&'static str] {
         "android-sdk",
         "go-cache",
         "docker",
+        "docker-volumes",
         "downloads-old",
         "screenshots-old",
         "mail-attachments",
@@ -505,8 +507,10 @@ mod tests {
         ("ios-simulators", None),
         ("android-sdk", None),
         ("go-cache", None),
-        // Runs a system-wide `docker system prune`, not a per-path move.
+        // Runs `docker image prune` / `docker builder prune`, not a per-path move.
         ("docker", Some(ReportOnly::NotPerPathTrash)),
+        // Destructive: `docker volume prune` deletes container data.
+        ("docker-volumes", Some(ReportOnly::Destructive)),
         ("downloads-old", None),
         ("screenshots-old", None),
         ("mail-attachments", None),

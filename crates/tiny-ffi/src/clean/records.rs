@@ -52,7 +52,7 @@ pub enum FfiDesktopAction {
 pub enum FfiReportOnlyReason {
     /// Permanent deletion or Empty Trash.
     Destructive,
-    /// Cleanup is a tool command (e.g. `docker system prune`), not a
+    /// Cleanup is a tool command (e.g. `docker image prune`), not a
     /// per-path move to Trash.
     NotPerPathTrash,
     /// The selection rule can flag data still in use (app-orphans).

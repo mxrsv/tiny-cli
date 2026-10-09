@@ -80,9 +80,12 @@ pub fn run(opts: crate::cli::CleanOpts) -> Result<()> {
         }
         CleanAction::Trash | CleanAction::HardDelete => {
             if matches!(action, CleanAction::Trash)
-                && selected
-                    .iter()
-                    .any(|group| matches!(group.id.as_str(), "docker" | "time-machine-local"))
+                && selected.iter().any(|group| {
+                    matches!(
+                        group.id.as_str(),
+                        "docker" | "docker-volumes" | "time-machine-local"
+                    )
+                })
             {
                 eprintln!("Warning: Docker prune and Time Machine snapshot removal cannot be undone; those tools have no Trash semantics.");
             }
