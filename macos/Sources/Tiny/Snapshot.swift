@@ -13,17 +13,8 @@ extension Main {
         let markers = FileManager.default.temporaryDirectory.appendingPathComponent("tiny-snapshot-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: markers) }
         if scene == .notice { try InFlightMarker(directory: markers).begin(UUID(), summary: "Force Quit “sleep” (PID 4242)") }
-        if scene == .reviewFixture {
-            let actions = ActionState(terminate: { _, _ in .alreadyExited }, quitApp: { _ in .alreadyExited },
-                                      marker: InFlightMarker(directory: markers))
-            let clean = CleanState(engine: DisplayCleanEngine(), actions: actions)
-            await clean.scan()?.value
-            clean.toggle(candidate: "jetbrains")
-            clean.toggle(candidate: "b-ips")
-            await clean.requestPreview()?.value
-            try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
-                             size: NSSize(width: 680, height: 600), to: url)
-            print("Rendered the review sheet with fixture data to \(url.path)")
+        if scene == .clean || scene == .review || scene == .reviewFixture {
+            try await renderFixtureClean(scene, markers: markers, to: url)
             return
         }
         if scene == .report {
@@ -43,8 +34,8 @@ extension Main {
         guard state.listError == nil, !state.processes.isEmpty else {
             throw NSError(domain: "Tiny", code: 4, userInfo: [NSLocalizedDescriptionKey: state.listError ?? "No process data"])
         }
-        if scene == .clean || scene == .cleanAll || scene == .review {
-            try await renderClean(state, scene: scene, to: url)
+        if scene == .cleanAll {
+            try await renderClean(state, to: url)
             return
         }
         let ownPID = UInt32(ProcessInfo.processInfo.processIdentifier)
@@ -63,32 +54,44 @@ extension Main {
         print("Rendered \(state.processes.count) live processes to \(url.path)")
     }
 
-    /// Real, read-only discovery; the review scene also asks Rust for a real preview.
-    @MainActor private static func renderClean(_ state: AppState, scene: SnapshotScene, to url: URL) async throws {
+    /// Fixture data (`DisplayCleanEngine`) through the real screens: nothing is scanned or moved.
+    @MainActor private static func renderFixtureClean(_ scene: SnapshotScene, markers: URL, to url: URL) async throws {
+        let actions = ActionState(terminate: { _, _ in .alreadyExited }, quitApp: { _ in .alreadyExited },
+                                  marker: InFlightMarker(directory: markers))
+        let clean = CleanState(engine: DisplayCleanEngine(), actions: actions)
+        await clean.scan()?.value
+        switch scene {
+        case .clean:
+            try await render(CleanView(clean: clean, actions: actions).padding(26).background(Backdrop()),
+                             size: NSSize(width: 1188, height: 1340), to: url)
+            print("Rendered the grouped Clean screen with fixture data to \(url.path)")
+        case .review:
+            // Stage a mix: git, owner and venv evidence, and the private-looking file ticked by hand.
+            for id in ["rust-a", "rust-b", "node-a", "cache-old", "diagnostic", "claude", "a-ips", "b-ips"] { clean.toggle(candidate: id) }
+            for id in ["venv-a", "dl-installer", "dl-recovery"] { clean.toggle(candidate: id) }
+            await clean.requestPreview()?.value
+            try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
+                             size: NSSize(width: 680, height: 600), to: url)
+            print("Rendered the review sheet with evidence (fixture data) to \(url.path)")
+        default:
+            clean.toggle(candidate: "jetbrains")
+            clean.toggle(candidate: "b-ips")
+            await clean.requestPreview()?.value
+            try await render(CleanReviewSheet(clean: clean, actions: actions).background(Theme.tile),
+                             size: NSSize(width: 680, height: 600), to: url)
+            print("Rendered the review sheet with fixture data to \(url.path)")
+        }
+    }
+
+    /// Real, read-only discovery of every category, tall enough to show all tiles.
+    @MainActor private static func renderClean(_ state: AppState, to url: URL) async throws {
         state.screen = .clean
         await state.clean.scan()?.value
         guard state.clean.phase == .ready else {
             throw NSError(domain: "Tiny", code: 10, userInfo: [NSLocalizedDescriptionKey: state.clean.error?.message ?? "Scan failed"])
         }
-        guard scene == .review else {
-            // `clean-all` is tall enough to show every tile, including report-only ones.
-            let height: CGFloat = scene == .cleanAll ? 2400 : 850
-            try await render(ProcessesView(state: state, startsPolling: false), size: NSSize(width: 1240, height: height), to: url)
-            print("Rendered \(state.clean.categories.count) cleanup categories to \(url.path)")
-            return
-        }
-        // Stage, never run: tick a safe folder that holds a review item, if real data has one,
-        // so the sheet shows Rust's PC-C3 exclusion next to "moves with" rows.
-        let all = state.clean.categories.filter(CleanState.isSelectable).flatMap(\.candidates)
-        if let carrier = all.first(where: { item in
-            item.risk == .safe && all.contains { $0.risk != .safe && $0.id != item.id && CleanState.contains(item.path, $0.path) }
-        }) {
-            state.clean.toggle(candidate: carrier.id)
-        }
-        await state.clean.requestPreview()?.value
-        try await render(CleanReviewSheet(clean: state.clean, actions: state.actions).background(Theme.tile),
-                         size: NSSize(width: 680, height: 600), to: url)
-        print("Rendered a preview of \(state.clean.preview?.items.count ?? 0) items to \(url.path)")
+        try await render(ProcessesView(state: state, startsPolling: false), size: NSSize(width: 1240, height: 2400), to: url)
+        print("Rendered \(state.clean.categories.count) cleanup categories to \(url.path)")
     }
 
     @MainActor private static func render(_ view: some View, size: NSSize, to url: URL) async throws {
@@ -128,47 +131,111 @@ extension Main {
     }
 }
 
-/// Display-only data for the `review-fixture` scene: a folder that moves with its
-/// parent, and a folder Rust leaves out because it holds an unselected review item.
+/// Display-only data for the `clean`, `review` and `review-fixture` scenes: every group, the
+/// collapsed empty line, several evidence kinds, a private-looking file, a folder that moves
+/// with its parent and a folder Rust leaves out because it holds an unselected review item.
 /// It never executes anything.
 private struct DisplayCleanEngine: CleanEngine {
-    private static let logs = "/Users/you/Library/Logs"
+    private static let home = "/Users/you"
+    private static let logs = "\(home)/Library/Logs"
+
+    /// 12:00 UTC, so the abbreviated date reads the same in every time zone.
+    private static func day(_ year: Int, _ month: Int, _ day: Int) -> Int64 {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return Int64(calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!.timeIntervalSince1970)
+    }
+
+    private static func item(_ id: String, _ path: String, _ size: UInt64, _ risk: FfiRisk = .safe,
+                             _ evidence: [FfiEvidence]) -> FfiCleanCandidate {
+        FfiCleanCandidate(id: id, path: path, sizeBytes: size, unreadableEntries: 0, risk: risk, evidence: evidence)
+    }
+
+    private static func category(_ id: String, _ label: String, _ reason: String, _ risk: FfiRisk, _ comesBack: FfiComesBack,
+                                _ items: [FfiCleanCandidate], status: FfiCategoryStatus = .found,
+                                desktop: FfiDesktopAction = .moveToTrash) -> FfiCleanCategory {
+        FfiCleanCategory(id: id, label: label, inclusionReason: reason, family: "dev", risk: risk, status: status,
+                         desktopAction: desktop, candidates: items, totalBytes: items.reduce(0) { $0 + $1.sizeBytes },
+                         unreadable: [], refused: [], comesBack: comesBack)
+    }
+
+    private static func categories() -> [FfiCleanCategory] {
+        let seen: [FfiEvidence] = [.modified(at: day(2026, 9, 30))]
+        let log = { (id: String, path: String, size: UInt64, risk: FfiRisk) in item(id, "\(logs)/\(path)", size, risk, seen) }
+        let dev = "\(home)/Developer", downloads = "\(home)/Downloads", caches = "\(home)/Library/Caches"
+        return [
+            category("user-logs", "User logs", "Sample", .safe, .appRecreates, [
+                log("jetbrains", "JetBrains", 120_000_000, .safe), log("diagnostic", "DiagnosticReports", 40_000_000, .safe),
+                log("claude", "Claude", 41_600_000, .safe)]),
+            category("crash-reports", "Crash reports", "Sample", .safe, .appRecreates, [
+                log("a-ips", "DiagnosticReports/a.ips", 20_000_000, .safe), log("b-ips", "DiagnosticReports/b.ips", 20_000_000, .safe)]),
+            category("jetbrains-logs", "JetBrains logs", "Sample", .review, .appRecreates, [
+                log("idea", "JetBrains/IntelliJIdea2026.2", 120_000_000, .review)]),
+            category("rust-targets", "Rust build output", "Cargo target folders in projects idle for 30+ days.", .safe,
+                     .rebuild(command: "cargo build"), [
+                        item("rust-a", "\(dev)/old-parser/target", 2_100_000_000, .safe,
+                             [.manifestModified(file: "Cargo.toml", at: day(2026, 3, 2)), .lastCommit(at: day(2026, 3, 9)), .workTreeClean]),
+                        item("rust-b", "\(dev)/scratch-cli/target", 640_000_000, .safe,
+                             [.manifestModified(file: "Cargo.toml", at: day(2026, 2, 11)), .notGitRepo])]),
+            category("node-modules", "node_modules", "Installed packages in projects idle for 30+ days.", .safe,
+                     .rebuild(command: "npm install"), [
+                        item("node-a", "\(dev)/landing-v1/node_modules", 880_000_000, .safe,
+                             [.manifestModified(file: "package.json", at: day(2026, 4, 18)), .lastCommit(at: day(2026, 4, 20)), .workTreeClean])]),
+            category("python-venvs", "Python virtualenvs", "Virtualenvs in projects idle for 30+ days.", .review,
+                     .rebuild(command: "python -m venv .venv"), [
+                        item("venv-a", "\(dev)/ml-notes/.venv", 1_400_000_000, .review,
+                             [.manifestModified(file: "requirements.txt", at: day(2026, 1, 14)), .venvMarker, .notGitRepo])]),
+            category("user-caches", "App caches", "Per-app cache folders in ~/Library/Caches.", .safe, .appRecreates, [
+                item("cache-code", "\(caches)/com.microsoft.VSCode", 310_000_000, .safe, seen + [.owningApp(name: "Code")]),
+                item("cache-old", "\(caches)/com.example.OldTool", 54_000_000, .safe, seen + [.owningAppUnknown])]),
+            category("vscode", "VS Code caches", "Editor caches that VS Code recreates.", .safe, .appRecreates, [],
+                     status: .appRunning(app: "Code")),
+            category("yarn-cache", "Yarn cache", "Yarn's package download cache.", .safe, .redownload, []),
+            category("downloads-old", "Old Downloads", "Files in Downloads not modified or opened for 30+ days.", .review, .trashOnly, [
+                item("dl-installer", "\(downloads)/Xcode_26.xip", 3_200_000_000, .review,
+                     [.modified(at: day(2026, 4, 9)), .lastOpened(at: day(2026, 5, 2))]),
+                item("dl-invoice", "\(downloads)/invoice-march.pdf", 480_000, .review, [.modified(at: day(2026, 3, 31))]),
+                item("dl-recovery", "\(downloads)/recovery-codes.txt", 4_096, .review,
+                     [.modified(at: day(2026, 6, 12)), .sensitive(reason: "recovery or backup codes")]),
+                item("dl-env", "\(downloads)/env.txt", 1_024, .review,
+                     [.modified(at: day(2026, 7, 3)), .sensitive(reason: "environment file with secrets")])]),
+            category("mail-attachments", "Mail attachments", "Attachments Mail saved to disk.", .review, .trashOnly, []),
+            category("docker", "Docker data", "Docker images and volumes.", .review, .notRecoverable, [
+                item("docker-a", "\(home)/Library/Containers/com.docker.docker/Data/vms", 12_000_000_000, .review, seen)],
+                     desktop: .reportOnly(reason: .notPerPathTrash))]
+    }
 
     func cleanDiscover(_ options: FfiCleanOptions, token: CancellationToken,
                        progress: any ProgressListener) async throws -> FfiDiscovery {
-        func item(_ id: String, _ path: String, _ size: UInt64, _ risk: FfiRisk = .safe) -> FfiCleanCandidate {
-            FfiCleanCandidate(id: id, path: "\(Self.logs)/\(path)", sizeBytes: size, unreadableEntries: 0, risk: risk, evidence: [])
-        }
-        func category(_ id: String, _ label: String, _ risk: FfiRisk, _ items: [FfiCleanCandidate]) -> FfiCleanCategory {
-            FfiCleanCategory(id: id, label: label, inclusionReason: "Sample", family: "user-storage", risk: risk, status: .found,
-                             desktopAction: .moveToTrash, candidates: items, totalBytes: items.reduce(0) { $0 + $1.sizeBytes },
-                             unreadable: [], refused: [], comesBack: .appRecreates)
-        }
-        return FfiDiscovery(discoveryId: "sample", categories: [
-            category("user-logs", "User logs", .safe, [item("jetbrains", "JetBrains", 120_000_000),
-                                                       item("diagnostic", "DiagnosticReports", 40_000_000),
-                                                       item("claude", "Claude", 41_600_000)]),
-            category("crash-reports", "Crash reports", .safe, [item("a-ips", "DiagnosticReports/a.ips", 20_000_000),
-                                                               item("b-ips", "DiagnosticReports/b.ips", 20_000_000)]),
-            category("jetbrains-logs", "JetBrains logs", .review, [item("idea", "JetBrains/IntelliJIdea2026.2", 120_000_000, .review)])])
+        FfiDiscovery(discoveryId: "sample", categories: Self.categories())
     }
 
+    /// Mirrors Rust's preview rules for the fixture: a path inside another selected one moves
+    /// with it, and a folder holding an unselected review item is left out.
     func cleanPreview(_ candidateIds: [String]) async throws -> FfiPreview {
-        let diagnostic = "\(Self.logs)/DiagnosticReports"
-        func covered(_ id: String, _ name: String, _ selected: Bool) -> FfiCoveredCandidate {
-            FfiCoveredCandidate(candidateId: id, path: "\(diagnostic)/\(name)", risk: .safe, selected: selected)
+        let all = Self.categories().flatMap { category in category.candidates.map { (category.id, $0) } }
+        let selected = all.filter { candidateIds.contains($0.1.id) }
+        var items: [FfiPreviewItem] = [], excluded: [FfiPreviewExclusion] = []
+        for (categoryId, candidate) in selected.sorted(by: { $0.1.path < $1.1.path }) {
+            if let parent = selected.first(where: { $0.1.id != candidate.id && CleanState.contains($0.1.path, candidate.path) && $0.1.path != candidate.path }) {
+                excluded.append(FfiPreviewExclusion(candidateId: candidate.id, path: candidate.path,
+                                                    reason: .insideSelected(parentCandidateId: parent.1.id)))
+                continue
+            }
+            let inside = all.filter { $0.1.id != candidate.id && CleanState.contains(candidate.path, $0.1.path) }
+            let unselectedReview = inside.filter { $0.1.risk != .safe && !candidateIds.contains($0.1.id) }
+            if !unselectedReview.isEmpty {
+                excluded.append(FfiPreviewExclusion(candidateId: candidate.id, path: candidate.path,
+                                                    reason: .coversUnselectedReview(candidateIds: unselectedReview.map(\.1.id))))
+                continue
+            }
+            items.append(FfiPreviewItem(candidateId: candidate.id, categoryId: categoryId, path: candidate.path,
+                                        sizeBytes: candidate.sizeBytes, risk: candidate.risk,
+                                        covers: inside.map { FfiCoveredCandidate(candidateId: $0.1.id, path: $0.1.path, risk: $0.1.risk,
+                                                                                selected: candidateIds.contains($0.1.id)) }))
         }
-        return FfiPreview(previewId: "sample", items: [
-            FfiPreviewItem(candidateId: "claude", categoryId: "user-logs", path: "\(Self.logs)/Claude", sizeBytes: 41_600_000,
-                           risk: .safe, covers: []),
-            FfiPreviewItem(candidateId: "diagnostic", categoryId: "user-logs", path: diagnostic, sizeBytes: 40_000_000,
-                           risk: .safe, covers: [covered("a-ips", "a.ips", true), covered("b-ips", "b.ips", false)])],
-            excluded: [
-                FfiPreviewExclusion(candidateId: "jetbrains", path: "\(Self.logs)/JetBrains",
-                                    reason: .coversUnselectedReview(candidateIds: ["idea"])),
-                FfiPreviewExclusion(candidateId: "a-ips", path: "\(diagnostic)/a.ips",
-                                    reason: .insideSelected(parentCandidateId: "diagnostic"))],
-            bytesSelected: 81_600_000, expiresInSeconds: 900)
+        return FfiPreview(previewId: "sample", items: items, excluded: excluded,
+                          bytesSelected: items.reduce(0) { $0 + $1.sizeBytes }, expiresInSeconds: 900)
     }
 
     func cleanExecute(_ previewId: String, token: CancellationToken,

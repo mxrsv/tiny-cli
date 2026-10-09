@@ -14,7 +14,10 @@ import TinyEngine
         try await markerAroundExecute()
         try await progressOwnership()
         try await realDiscoveryIsReadOnlyAndScoped()
-        print("PASS: 10 clean checks (selection, confirm/execute once, report, errors, preview errors, refusals, stale confirmation, marker, progress, real discovery)")
+        try groupingCollapsesEmptyCategories()
+        try await sensitiveItemsAreNeverSelectedByCategory()
+        try evidenceCopy()
+        print("PASS: 13 clean checks (selection, confirm/execute once, report, errors, preview errors, refusals, stale confirmation, marker, progress, real discovery, grouping, sensitive selection, evidence copy)")
     }
 
     private static func selectionRules() async throws {
@@ -301,6 +304,79 @@ import TinyEngine
         }
     }
 
+    // MARK: Trust evidence (UI1-UI3)
+
+    /// UI1: three groups in order; scanned empty movable categories collapse into one line; skipped ones keep tiles.
+    private static func groupingCollapsesEmptyCategories() throws {
+        let item = { candidate("c-\(UUID().uuidString)") }
+        let categories = [
+            category("cargo", candidates: [item()], comesBack: .rebuild(command: "cargo build")),
+            category("downloads", risk: .review, candidates: [item()], comesBack: .trashOnly),
+            category("docker", desktop: .reportOnly(reason: .notPerPathTrash), candidates: [item()], comesBack: nil),
+            category("yarn", comesBack: .redownload),
+            category("mail", risk: .review, comesBack: .trashOnly),
+            category("vscode", status: .appRunning(app: "Code")),
+            category("broken", status: .failed(detail: "boom")),
+            category("unknown", candidates: [item()], comesBack: nil),
+            category("gone", candidates: [item()], comesBack: .notRecoverable)]
+        let layout = CleanState.layout(categories)
+        try check(layout.sections.map(\.group) == [.rebuilt, .yourFiles, .reportOnly], "groups appear in the agreed order")
+        try check(layout.sections[0].categories.map(\.id) == ["cargo", "vscode", "broken"], "rebuilt group keeps skipped categories as tiles")
+        try check(layout.sections[1].categories.map(\.id) == ["downloads", "unknown", "gone"],
+                  "trashOnly, notRecoverable and unknown comesBack are never called rebuilt")
+        try check(layout.sections[2].categories.map(\.id) == ["docker"], "report-only group")
+        try check(layout.checkedEmpty.map(\.id) == ["yarn", "mail"], "scanned, movable, empty categories collapse")
+        try check(CleanCopy.checkedEmpty(["Yarn cache", "Mail attachments"]) == "Checked, nothing found: Yarn cache, Mail attachments", "collapsed line copy")
+        try check(CleanState.layout([category("only-empty")]).sections.isEmpty, "all-empty scan has no tiles")
+        try check(CleanCopy.comesBack(.rebuild(command: "cargo build")) == "Comes back with “cargo build”"
+                    && CleanCopy.comesBack(.redownload) == "Downloaded again when needed"
+                    && CleanCopy.comesBack(.appRecreates) == "The app recreates it"
+                    && CleanCopy.comesBack(.trashOnly) == "Only the Trash can bring these back"
+                    && CleanCopy.comesBack(.notRecoverable) == "Permanent: cannot be restored", "comes-back copy")
+    }
+
+    /// Private-looking items are never selected by preselection or the tile toggle, but can be ticked one by one.
+    private static func sensitiveItemsAreNeverSelectedByCategory() async throws {
+        let codes = candidate("codes", evidence: [.modified(at: 0), .sensitive(reason: "recovery codes")])
+        let (clean, engine, _, cleanup) = make()
+        defer { cleanup() }
+        await engine.useCategories([
+            category("downloads", risk: .review, candidates: [candidate("a"), codes, candidate("b")], comesBack: .trashOnly),
+            category("vault", risk: .review, candidates: [candidate("only-private", evidence: [.sensitive(reason: "key")])], comesBack: .trashOnly),
+            category("safe-dl", candidates: [candidate("s1"), candidate("s2", evidence: [.sensitive(reason: "certificate")])], comesBack: .trashOnly)])
+        await clean.scan()?.value
+        let state = { (id: String) in CleanState.checkState(clean.categories.first { $0.id == id }!, selection: clean.selection) }
+        try check(clean.selection == ["s1"], "a safe category never preselects a private-looking item")
+        clean.toggle(category: "downloads")
+        try check(clean.selection == ["s1", "a", "b"], "the tile toggle skips private-looking items")
+        try check(state("downloads") == .mixed, "tile is mixed while a private item stays unticked")
+        clean.toggle(candidate: "codes")
+        try check(clean.selection.contains("codes") && state("downloads") == .on, "ticked one by one, the tile becomes on")
+        clean.toggle(category: "downloads")
+        try check(state("downloads") == .off && clean.selection == ["s1"], "a click clears everything including a ticked private item")
+        clean.toggle(category: "vault")
+        try check(state("vault") == .off && !clean.selection.contains("only-private"), "a category of only private items selects nothing")
+        clean.toggle(category: "safe-dl")
+        clean.toggle(category: "safe-dl")
+        try check(clean.selection == ["s1"], "a safe tile click never adds the private-looking item")
+    }
+
+    private static func evidenceCopy() throws {
+        let utc = TimeZone(identifier: "UTC")!
+        let may4 = Int64(1_777_896_000) // 2026-05-04 12:00 UTC
+        try check(CleanCopy.date(may4, in: utc) == "4 May 2026", "abbreviated date, no time")
+        let facts: [FfiEvidence] = [.manifestModified(file: "Cargo.toml", at: may4), .lastCommit(at: may4), .workTreeClean]
+        try check(CleanCopy.evidenceLine(facts, in: utc) == "Cargo.toml changed 4 May 2026 · Last commit 4 May 2026 · No uncommitted changes", "git evidence line")
+        try check(CleanCopy.evidenceLine([.modified(at: may4), .lastOpened(at: may4)], in: utc) == "Modified 4 May 2026 · Last opened 4 May 2026", "download evidence line")
+        try check(CleanCopy.evidenceLine([.owningApp(name: "Code")]) == "Owner: Code (not running)", "owning app")
+        try check(CleanCopy.evidenceLine([.owningAppUnknown]) == "Owner app unknown", "owner unknown")
+        try check(CleanCopy.evidenceLine([.venvMarker]) == "Has pyvenv.cfg" && CleanCopy.evidenceLine([.notGitRepo]) == "Not in a git repository", "marker facts")
+        try check(CleanCopy.evidenceLine([.sensitive(reason: "recovery codes")]) == nil, "a sensitive fact is a warning, not part of the line")
+        let private1 = candidate("p", evidence: [.modified(at: may4), .sensitive(reason: "recovery codes")])
+        try check(CleanCopy.sensitiveReason(private1) == "Looks private: recovery codes" && CleanState.isSensitive(private1), "sensitive warning")
+        try check(CleanCopy.sensitiveReason(candidate("q")) == nil && !CleanState.isSensitive(candidate("q")), "no warning without a sensitive fact")
+    }
+
     // MARK: Fixtures
 
     static func make(now: @escaping () -> Date = Date.init) -> (CleanState, FakeCleanEngine, InFlightMarker, () -> Void) {
@@ -313,15 +389,16 @@ import TinyEngine
     }
 
     nonisolated static func category(_ id: String, risk: FfiRisk = .safe, desktop: FfiDesktopAction = .moveToTrash,
-                         status: FfiCategoryStatus = .found, candidates: [FfiCleanCandidate] = []) -> FfiCleanCategory {
+                         status: FfiCategoryStatus = .found, candidates: [FfiCleanCandidate] = [],
+                         comesBack: FfiComesBack? = .appRecreates) -> FfiCleanCategory {
         FfiCleanCategory(id: id, label: id, inclusionReason: "fixture", family: "dev", risk: risk, status: status,
                          desktopAction: desktop, candidates: candidates, totalBytes: candidates.reduce(0) { $0 + $1.sizeBytes },
-                         unreadable: [], refused: [], comesBack: .appRecreates)
+                         unreadable: [], refused: [], comesBack: comesBack)
     }
 
     nonisolated static func candidate(_ id: String, risk: FfiRisk = .safe, size: UInt64 = 100,
-                                      path: String? = nil) -> FfiCleanCandidate {
-        FfiCleanCandidate(id: id, path: path ?? "/Users/alice/Library/Caches/\(id)", sizeBytes: size, unreadableEntries: 0, risk: risk, evidence: [])
+                                      path: String? = nil, evidence: [FfiEvidence] = []) -> FfiCleanCandidate {
+        FfiCleanCandidate(id: id, path: path ?? "/Users/alice/Library/Caches/\(id)", sizeBytes: size, unreadableEntries: 0, risk: risk, evidence: evidence)
     }
 }
 

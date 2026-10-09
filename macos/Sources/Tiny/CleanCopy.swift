@@ -32,6 +32,79 @@ enum CleanCopy {
         }
     }
 
+    // MARK: Groups and evidence
+
+    static func groupTitle(_ group: CleanState.Group) -> String {
+        switch group {
+        case .rebuilt: return "Rebuilt automatically"
+        case .yourFiles: return "Your files"
+        case .reportOnly: return "Report only"
+        }
+    }
+
+    static func groupNote(_ group: CleanState.Group) -> String {
+        switch group {
+        case .rebuilt: return "Caches and build output that tools or apps create again when needed."
+        case .yourFiles: return "Only the Trash can bring these back. Check each path before you move it."
+        case .reportOnly: return "Tiny shows these but never moves them."
+        }
+    }
+
+    static func checkedEmpty(_ labels: [String]) -> String {
+        "Checked, nothing found: " + labels.joined(separator: ", ")
+    }
+
+    static func comesBack(_ fact: FfiComesBack) -> String {
+        switch fact {
+        case .rebuild(let command): return "Comes back with “\(command)”"
+        case .redownload: return "Downloaded again when needed"
+        case .appRecreates: return "The app recreates it"
+        case .trashOnly: return "Only the Trash can bring these back"
+        case .notRecoverable: return "Permanent: cannot be restored"
+        }
+    }
+
+    /// Abbreviated date without time, e.g. "4 May 2026"; fixed locale so it reads the same everywhere.
+    static func date(_ unixSeconds: Int64, in timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "d MMM yyyy"
+        return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(unixSeconds)))
+    }
+
+    /// One fact as a short phrase. A `sensitive` fact is a warning, shown by `sensitiveReason`.
+    static func evidence(_ fact: FfiEvidence, in timeZone: TimeZone = .current) -> String? {
+        switch fact {
+        case .modified(let at): return "Modified \(date(at, in: timeZone))"
+        case .manifestModified(let file, let at): return "\(file) changed \(date(at, in: timeZone))"
+        case .lastCommit(let at): return "Last commit \(date(at, in: timeZone))"
+        case .workTreeClean: return "No uncommitted changes"
+        case .notGitRepo: return "Not in a git repository"
+        case .venvMarker: return "Has pyvenv.cfg"
+        case .lastOpened(let at): return "Last opened \(date(at, in: timeZone))"
+        case .owningApp(let name): return "Owner: \(name) (not running)"
+        case .owningAppUnknown: return "Owner app unknown"
+        case .sensitive: return nil
+        }
+    }
+
+    /// The compact secondary line under a review row; nil when there is nothing to say.
+    static func evidenceLine(_ facts: [FfiEvidence], in timeZone: TimeZone = .current) -> String? {
+        let parts = facts.compactMap { evidence($0, in: timeZone) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    static func sensitiveReason(_ candidate: FfiCleanCandidate) -> String? {
+        for case .sensitive(let reason) in candidate.evidence { return "Looks private: \(reason)" }
+        return nil
+    }
+
+    static func privateNote(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "path looks" : "paths look") private and \(count == 1 ? "is" : "are") never selected with this tile. Tick \(count == 1 ? "it" : "them") one by one in Review."
+    }
+
     static func isLowerBound(_ category: FfiCleanCategory) -> Bool {
         !category.unreadable.isEmpty || category.candidates.contains { $0.unreadableEntries > 0 }
     }
