@@ -5,7 +5,7 @@ status: APPROVED
 
 # Spec: Clean screen that earns trust — correct selection rules, per-path evidence
 
-**Date**: 2026-10-09 | **Status**: APPROVED 2026-10-09 | **Plan**: [2026-10-09-clean-trust-evidence](../plans/2026-10-09-clean-trust-evidence.md)
+**Date**: 2026-10-09 | **Status**: APPROVED 2026-10-09, amended 2026-10-10 | **Plan**: [2026-10-09-clean-trust-evidence](../plans/2026-10-09-clean-trust-evidence.md)
 
 ## 1. Context
 
@@ -46,6 +46,25 @@ back*, and nothing is offered on a rule that is known to misfire.
 - **Demo surface**: the real app on the user's machine, scan only; Move to Trash is never
   pressed during review.
 
+## 2a. User decisions (2026-10-10)
+
+Made after a multi-agent review of the Clean screen (research kept in the session
+scratchpad, not the repo).
+
+- **Simulator devices** (resolves §6): a separate destructive category, report-only on the
+  desktop; the CLI removes a selected device with `xcrun simctl delete <udid>`. Showing the
+  command on the desktop stays deferred, as in the SwiftUI boundary spec.
+- **Docker**: images and build cache stay in `docker`; volumes become the destructive
+  category `docker-volumes`. Each selected resource type gets its own prune command;
+  `docker system prune --volumes` is never run. Fixed on `main` first (`1baeb67`).
+- **App orphans**: report only in the CLI as well, until ownership is checked per bundle id.
+  Fixed on `main` first (`8b4842a`).
+- **User caches gate**: folders named after a vendor rather than a bundle id are gated by
+  the vendor's app.
+- **AC4**: the current grouped screen is not approved on its own; it is approved once,
+  together with the layout chosen under the
+  [clean categories spec](2026-10-10-clean-categories.md).
+
 ## 3. Requirements
 
 ### Selection rules (tiny-core)
@@ -63,9 +82,21 @@ back*, and nothing is offered on a rule that is known to misfire.
 - **SR4 User caches.** `com.apple.*` entries are not offered. For other entries the owning
   app is resolved from the bundle id to its executable name; the running-app gate uses that
   name. When no app is found the item is offered with "owning app unknown".
-- **SR5 Simulator devices.** Only devices reported unavailable by `xcrun simctl list devices
-  -j` are offered; `CoreSimulator/Caches` entries stay as they are. Both are refused while
-  `Xcode` or `Simulator` runs.
+  A folder that is not a bundle id is gated by a fixed vendor table (`Google` →
+  `Google Chrome`, `BraveSoftware` → `Brave Browser`).
+  Apple folders without the prefix (`Animoji`, `CloudKit`, `FamilyCircle`,
+  `familycircled`, `GeoServices`, `PassKit`) are not offered.
+- **SR5 Simulator devices.** `ios-simulators` keeps only `CoreSimulator/Caches` entries.
+  Devices move to the destructive category `simulator-devices`: only devices reported
+  unavailable by `xcrun simctl list devices -j` are offered, the CLI removes each selected
+  device with `xcrun simctl delete <udid>`, and the desktop reports them only. Both
+  categories are refused while `Xcode` or `Simulator` runs.
+- **SR6 Docker.** `docker` lists unused images and build cache and prunes only the selected
+  types (`docker image prune -af`, `docker builder prune -af`). Volumes are the destructive
+  category `docker-volumes` (`docker volume prune -af`), whose "comes back" fact is
+  not recoverable. Both stay report-only on the desktop.
+- **SR7 App orphans.** The CLI refuses to move or delete `app-orphans` items and says why;
+  discovery and the desktop report are unchanged.
 
 ### Evidence contract (tiny-core → tiny-ffi → Swift)
 
@@ -89,14 +120,15 @@ back*, and nothing is offered on a rule that is known to misfire.
 
 ## 4. Acceptance criteria
 
-- **AC1** SR1–SR5 each have fixture tests in temp dirs that fail without the rule.
+- **AC1** SR1–SR7 each have fixture tests in temp dirs (or MockRunner output) that fail
+  without the rule.
 - **AC2** On the user's machine (scan only): `tiny-cli/target` and `spacevibe-bench/node_modules`
   are not offered; recovery-code files in Downloads show as sensitive and stay unticked
   after ticking the Downloads tile; no `com.apple.*` path appears under User caches;
   `com.microsoft.VSCode` is skipped while VS Code runs.
 - **AC3** Every offered candidate in the real-data scan has at least one evidence fact.
 - **AC4** Screenshots of the grouped screen and of the review sheet with evidence are approved
-  by the user.
+  by the user, in one round with the chosen category layout (2026-10-10).
 - **AC5** `cargo test -p tiny-ffi -p tiny-core --all-targets --locked`, clippy `-D warnings`
   and `scripts/test-native.sh` pass.
 
@@ -105,9 +137,9 @@ back*, and nothing is offered on a rule that is known to misfire.
 - Full trust-first redesign, activity log, permanent deletion from the desktop.
 - Porting to `main`'s CLI-only tree (raised separately).
 
-## 6. Open decision
+## 6. Resolved decision
 
-- **Simulator device removal on the desktop.** Removing a device correctly is
+- **Simulator device removal on the desktop** (resolved 2026-10-10, see §2a and SR5). Removing a device correctly is
   `xcrun simctl delete <udid>`, a permanent tool command, not a move to Trash. Desktop
   policy keeps tool commands report-only (like Docker). Proposed: split devices into their
   own category, report-only on the desktop with the `simctl` command shown; the CLI runs it.
