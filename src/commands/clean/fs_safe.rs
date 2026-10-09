@@ -110,6 +110,14 @@ pub fn is_dir_safe(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// True iff `path` is a regular file (not a symlink). Replacement for
+/// `Path::is_file()`, which follows symlinks.
+pub fn is_file_safe(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_file())
+        .unwrap_or(false)
+}
+
 /// Sums the byte length of every file under `root`, never following symlinks.
 /// Returns 0 if `root` does not exist.
 pub fn dir_size_safe(root: &Path) -> u64 {

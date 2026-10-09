@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
-use crate::commands::clean::fs_safe::{dir_size_safe, walk_with};
+use crate::commands::clean::fs_safe::{dir_size_safe, is_file_safe, walk_with};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "python-caches";
@@ -117,7 +117,7 @@ pub fn find_orphan_venv(root: &Path, idle_days: u64) -> Vec<PathBuf> {
 pub fn python_manifest(dir: &Path) -> Option<PathBuf> {
     for name in ["pyproject.toml", "setup.py", "requirements.txt"] {
         let p = dir.join(name);
-        if p.is_file() {
+        if is_file_safe(&p) {
             return Some(p);
         }
     }
