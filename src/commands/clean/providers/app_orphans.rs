@@ -8,6 +8,10 @@
 //! because some apps store their data under a different key than their
 //! bundle ID.
 //!
+//! **Report only.** Folder names such as `AddressBook` or `CloudDocs`
+//! match no bundle id yet belong to macOS or a running app, so `execute`
+//! refuses every item until ownership is checked per bundle id.
+//!
 //! Spotlight tắt → `mdfind` returns 0 lines → we MUST refuse to discover
 //! (otherwise every dir would look orphan). The handoff calls this out
 //! explicitly: "if mdfind returns 0 result, provider refuse discover".
@@ -16,14 +20,16 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
-use super::{execute_per_item, top_level_entries, CleanProvider};
+use super::{top_level_entries, CleanProvider};
 use crate::commands::clean::runner::{CommandRunner, RealRunner};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "app-orphans";
-const LABEL: &str = "Orphaned Application Support dirs";
+const LABEL: &str = "App leftovers (report only)";
+const REPORT_ONLY: &str =
+    "report only: a folder name does not prove its app is gone; check it in Finder";
 
 const MDFIND_QUERY: &str = "kMDItemContentType == 'com.apple.application-bundle'";
 const APP_SUPPORT: &str = "Library/Application Support";
@@ -125,7 +131,16 @@ impl CleanProvider for AppOrphans {
         Ok(orphans)
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
-        execute_per_item(items, action, ID)
+        if matches!(action, ExecAction::EmptyTrash) {
+            return Err(anyhow!("{} provider does not accept EmptyTrash", ID));
+        }
+        Ok(ExecReport {
+            failed: items
+                .iter()
+                .map(|item| (item.path.clone(), REPORT_ONLY.to_string()))
+                .collect(),
+            ..ExecReport::default()
+        })
     }
 }
 
@@ -143,6 +158,28 @@ mod tests {
     #[test]
     fn app_orphans_review_risk() {
         assert_eq!(AppOrphans::new().risk(), RiskLevel::Review);
+    }
+
+    #[test]
+    fn execute_refuses_every_item_and_leaves_it_in_place() {
+        let dir = std::env::temp_dir().join(format!("tiny-app-orphans-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let item = CleanItem {
+            category_id: ID.to_string(),
+            category_label: LABEL.to_string(),
+            path: dir.clone(),
+            size: 0,
+            risk: RiskLevel::Review,
+        };
+        let p = AppOrphans::new();
+        for action in [ExecAction::Trash, ExecAction::HardDelete] {
+            let report = p.execute(std::slice::from_ref(&item), action).unwrap();
+            assert!(report.removed_paths.is_empty());
+            assert_eq!(report.failed, vec![(dir.clone(), REPORT_ONLY.to_string())]);
+            assert!(dir.is_dir());
+        }
+        assert!(p.execute(&[item], ExecAction::EmptyTrash).is_err());
+        crate::commands::clean::fs_safe::remove_recursive_safe(&dir).unwrap();
     }
 
     #[test]
