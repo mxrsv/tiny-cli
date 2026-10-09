@@ -20,6 +20,7 @@ enum CleanCopy {
         case .destructive: return "Permanent deletion stays in the CLI."
         case .notPerPathTrash: return "Cleanup is a tool command (e.g. Docker prune, Time Machine snapshots), so it stays in the CLI."
         case .unreliableMatch: return "Folder-name matching is unreliable here; review these in Finder."
+        case .sizeOnly: return "Shown for size only; remove models with the app or tool that downloaded them."
         }
     }
 

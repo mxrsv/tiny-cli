@@ -38,6 +38,13 @@ C1 lands before C2–C6. C8–C9 follow C7.
   `section` added with a Swift default of `nil`, so existing Swift call sites build. AI
   models is not a family yet (FM1: once its providers exist). Trash and `app-orphans` are
   Leftovers; `user-caches` is Apps & browsers.
+- 2026-10-10: C8 and C9 on branch `claude/new-providers-obvjbk`, stacked on C1 (draft PR).
+  Nine providers with temp-dir fixtures and one cross-provider overlap test (AC5).
+  Deviations from spec §3: `~/Library/org.swift.swiftpm` is not offered (it holds SwiftPM
+  configuration and security fingerprints, not cache); Homebrew old kegs are not reported
+  yet; `browser-profiles` leaves Chrome and Arc `Default/Cache` to `browser-caches`;
+  `ai-models` is its own family and is report-only for every tool (new `SizeOnly` reason,
+  its CLI `execute` refuses too). Done before C2–C7, so the layout work sees the final ids.
 
 ## Handoff
 
