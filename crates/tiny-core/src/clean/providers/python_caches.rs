@@ -80,11 +80,12 @@ impl CleanProvider for PythonCaches {
 }
 
 /// Walks `root` symlink-safe and returns every `__pycache__` dir. Manifest
-/// check NOT required — pycache is always safe to delete.
+/// check NOT required — pycache is always safe to delete. Virtualenvs are
+/// not descended: their caches go with the venv, not as separate items.
 pub fn find_pycache(ctx: &ScanContext<'_>, root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     walk_with(root, ctx, |path, meta| {
-        if !meta.file_type().is_dir() {
+        if !meta.file_type().is_dir() || is_named_venv(path) {
             return false;
         }
         if path.file_name().and_then(|n| n.to_str()) == Some("__pycache__") {
@@ -96,18 +97,17 @@ pub fn find_pycache(ctx: &ScanContext<'_>, root: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// Walks `root` symlink-safe and returns every venv-style dir whose parent
-/// has a python manifest (pyproject.toml / setup.py / requirements.txt) AND
-/// the manifest is idle.
+/// Walks `root` symlink-safe and returns every venv-style dir that holds a
+/// `pyvenv.cfg` and whose parent has a python manifest (pyproject.toml /
+/// setup.py / requirements.txt) AND the manifest is idle. The name alone is
+/// not enough: a package folder called `env/` is source code.
 pub fn find_orphan_venv(ctx: &ScanContext<'_>, root: &Path, idle_days: u64) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     walk_with(root, ctx, |path, meta| {
         if !meta.file_type().is_dir() {
             return false;
         }
-        let name = path.file_name().and_then(|n| n.to_str());
-        let is_venv = matches!(name, Some(n) if VENV_NAMES.contains(&n));
-        if is_venv {
+        if is_named_venv(path) {
             if let Some(parent) = path.parent() {
                 if let Some(manifest) = python_manifest(parent) {
                     if is_idle(&manifest, idle_days) {
@@ -120,6 +120,17 @@ pub fn find_orphan_venv(ctx: &ScanContext<'_>, root: &Path, idle_days: u64) -> V
         true
     });
     found
+}
+
+/// True when `dir` has a venv name and is a virtualenv: `python -m venv`
+/// and virtualenv both write `pyvenv.cfg` at its top level.
+fn is_named_venv(dir: &Path) -> bool {
+    let named =
+        matches!(dir.file_name().and_then(|n| n.to_str()), Some(n) if VENV_NAMES.contains(&n));
+    named
+        && std::fs::symlink_metadata(dir.join("pyvenv.cfg"))
+            .map(|m| m.file_type().is_file())
+            .unwrap_or(false)
 }
 
 /// Returns the first existing python manifest (pyproject.toml / setup.py /
@@ -170,11 +181,48 @@ mod tests {
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
 
+    fn make_venv(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("pyvenv.cfg"), b"home = /usr/bin\n").unwrap();
+    }
+
+    #[test]
+    fn source_folder_named_env_is_not_a_venv() {
+        let root = tempdir("srcenv");
+        let proj = root.join("app");
+        fs::create_dir_all(proj.join("env")).unwrap();
+        fs::write(proj.join("env/settings.py"), b"DEBUG = False\n").unwrap();
+        let manifest = proj.join("requirements.txt");
+        fs::write(&manifest, b"requests\n").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(90 * 86_400);
+        std::fs::File::open(&manifest)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert!(find_orphan_venv(&ScanContext::unchecked(), &root, 30).is_empty());
+        make_venv(&proj.join("venv"));
+        let found = find_orphan_venv(&ScanContext::unchecked(), &root, 30);
+        assert_eq!(found, vec![proj.join("venv")]);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn pycache_inside_a_venv_is_not_listed_separately() {
+        let root = tempdir("venvpyc");
+        let venv = root.join("p/.venv");
+        make_venv(&venv);
+        fs::create_dir_all(venv.join("lib/python3.12/site-packages/x/__pycache__")).unwrap();
+        fs::create_dir_all(root.join("p/src/__pycache__")).unwrap();
+        let found = find_pycache(&ScanContext::unchecked(), &root);
+        assert_eq!(found, vec![root.join("p/src/__pycache__")]);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
+
     #[test]
     fn venv_requires_python_manifest() {
         let root = tempdir("orphanvenv");
         let proj = root.join("ghost");
-        fs::create_dir_all(proj.join("venv")).unwrap();
+        make_venv(&proj.join("venv"));
         // No manifest → must not be flagged.
         let found = find_orphan_venv(&ScanContext::unchecked(), &root, 0);
         assert!(found.is_empty());
@@ -185,7 +233,7 @@ mod tests {
     fn venv_idle_threshold_applied() {
         let root = tempdir("freshvenv");
         let proj = root.join("alive");
-        fs::create_dir_all(proj.join(".venv")).unwrap();
+        make_venv(&proj.join(".venv"));
         let manifest = proj.join("pyproject.toml");
         fs::write(&manifest, b"[project]\nname=\"x\"\n").unwrap();
         let fresh = find_orphan_venv(&ScanContext::unchecked(), &root, 30);

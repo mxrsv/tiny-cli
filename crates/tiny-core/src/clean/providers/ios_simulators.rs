@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
 use super::{execute_per_item, top_level_entries, CleanProvider};
+use crate::clean::fs_safe::is_dir_safe;
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -52,27 +53,41 @@ impl CleanProvider for IosSimulators {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
-        let mut items = Vec::new();
-        for sub in SIM_DIRS {
-            items.extend(top_level_entries(
-                ctx,
-                &h.join(sub),
-                ID,
-                LABEL,
-                RiskLevel::Review,
-            ));
-        }
-        Ok(items)
+        Ok(SIM_DIRS
+            .iter()
+            .flat_map(|sub| simulator_entries(ctx, &h.join(sub)))
+            .collect())
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
     }
 }
 
+/// Folders directly inside `root`. Files are skipped: `Devices/` also holds
+/// `device_set.plist`, the registry CoreSimulator reads to list devices.
+fn simulator_entries(ctx: &ScanContext<'_>, root: &Path) -> Vec<CleanItem> {
+    top_level_entries(ctx, root, ID, LABEL, RiskLevel::Review)
+        .into_iter()
+        .filter(|item| is_dir_safe(&item.path))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::clean::providers::known_category_ids;
+
+    #[test]
+    fn device_registry_plist_is_never_a_candidate() {
+        let root = std::env::temp_dir().join(format!("tiny-sim-{}", std::process::id()));
+        let device = root.join("01DADBA3-1A21-4914-A093-29B4D0D7B9C8");
+        std::fs::create_dir_all(&device).unwrap();
+        std::fs::write(root.join("device_set.plist"), b"<plist/>").unwrap();
+        let items = simulator_entries(&ScanContext::unchecked(), &root);
+        let paths: Vec<_> = items.into_iter().map(|i| i.path).collect();
+        assert_eq!(paths, vec![device]);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
 
     #[test]
     fn ios_simulators_id_in_known_categories() {

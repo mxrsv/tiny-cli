@@ -8,6 +8,8 @@ use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "vscode";
 const LABEL: &str = "VS Code caches";
+/// Process name of the running editor (`pgrep -x`), not the bundle name.
+const APP: &str = "Code";
 
 const VSCODE_SUBDIRS: &[&str] = &[
     "Library/Application Support/Code/Cache",
@@ -36,6 +38,9 @@ impl CleanProvider for VsCode {
     }
     fn desktop_trash_paths(&self) -> bool {
         true
+    }
+    fn requires_app_quit(&self) -> Option<&'static str> {
+        Some(APP)
     }
     fn available(&self) -> bool {
         let h = match home() {
@@ -74,5 +79,10 @@ mod tests {
     #[test]
     fn vscode_id_in_known_categories() {
         assert!(known_category_ids().contains(&ID));
+    }
+
+    #[test]
+    fn vscode_gates_the_running_editor() {
+        assert_eq!(VsCode.requires_app_quit(), Some("Code"));
     }
 }

@@ -62,10 +62,18 @@ impl CleanProvider for DownloadsOld {
 
 /// Lists every file (not directory) directly inside `dir` whose mtime is
 /// older than `idle_days`. Non-recursive — subdirs are not descended (we
-/// don't want to recurse into a user's curated download folders).
+/// don't want to recurse into a user's curated download folders). Hidden
+/// files such as `.localized` and `.DS_Store` belong to Finder, not the user.
 pub fn list_old_files(ctx: &ScanContext<'_>, dir: &Path, idle_days: u64) -> Vec<CleanItem> {
     let mut out = Vec::new();
     for path in list_children(dir, ctx) {
+        let hidden = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_none_or(|n| n.starts_with('.'));
+        if hidden {
+            continue;
+        }
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(_) => continue,
@@ -129,6 +137,20 @@ mod tests {
         let found = list_old_files(&ScanContext::unchecked(), &dir, 30);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, stale);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&dir);
+    }
+
+    #[test]
+    fn downloads_skips_finder_dotfiles() {
+        let dir = tempdir("dot");
+        for name in [".localized", ".DS_Store", "old.zip"] {
+            let f = dir.join(name);
+            fs::write(&f, b"x").unwrap();
+            backdate(&f, 400);
+        }
+        let found = list_old_files(&ScanContext::unchecked(), &dir, 30);
+        let paths: Vec<_> = found.into_iter().map(|i| i.path).collect();
+        assert_eq!(paths, vec![dir.join("old.zip")]);
         let _ = crate::clean::fs_safe::remove_recursive_safe(&dir);
     }
 
