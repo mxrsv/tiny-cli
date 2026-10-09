@@ -186,19 +186,29 @@ tiny clean --category trash --hard      # the only sanctioned way to empty Trash
 TINY_CONFIRM_HARD=1 tiny clean --category cargo --hard -y   # non-interactive permanent delete
 ```
 
-Categories are grouped into three families in the picker (33 total):
+Categories are grouped into six families in the picker (42 total):
 
-**Dev caches (19)** — `cargo`, `npm`, `pnpm`, `yarn`, `node-modules`,
+**Apps & browsers (6)** — `user-caches`, `streaming-caches`, `chat-caches`,
+`browser-caches`, `browser-profiles`, `electron-app-caches`.
+
+**Developer tools (23)** — `cargo`, `npm`, `pnpm`, `yarn`, `node-modules`,
 `python-caches`, `rust-targets`, `gradle-maven`, `jetbrains`, `vscode`,
-`ios-simulators`, `simulator-devices`, `android-sdk`, `go-cache`, `docker`,
-`docker-volumes`, `xcode-derived`, `xcode-archives`, `xcode-devicesupport`.
+`ios-simulators`, `simulator-devices`, `android-sdk`, `go-cache`,
+`browser-automation`, `swift-packages`, `js-tool-caches`, `homebrew-cache`,
+`docker`, `docker-volumes`, `xcode-derived`, `xcode-archives`,
+`xcode-devicesupport`.
 
-**User storage (6)** — `downloads-old`, `screenshots-old`,
-`mail-attachments`, `streaming-caches`, `chat-caches`, `browser-caches`.
+**System & logs (5)** — `user-logs`, `quarantine`, `crash-reports`,
+`time-machine-local`, `font-quicklook-caches`.
 
-**System leftovers (8)** — `user-logs`, `user-caches`, `trash`,
-`quarantine`, `crash-reports`, `app-orphans`, `time-machine-local`,
-`font-quicklook-caches`.
+**Your files (3)** — `downloads-old`, `screenshots-old`, `mail-attachments`.
+
+**Leftovers (4)** — `app-orphans`, `device-updates`, `macos-installers`,
+`trash`.
+
+**AI models (1)** — `ai-models` (Ollama, LM Studio and Hugging Face models,
+measured only: tiny never removes them; use `ollama rm` or the tool that
+downloaded them).
 
 The default picker shows only **safe** categories. Add `--include-review`
 for developer caches and other items that may want manual review. Add

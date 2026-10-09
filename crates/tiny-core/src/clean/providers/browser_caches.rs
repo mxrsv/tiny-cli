@@ -13,7 +13,7 @@ const LABEL: &str = "Browser caches";
 /// Cache-only paths. NEVER include Cookies, Login Data, Preferences,
 /// History — those carry user state that's not "cache". Test below pins
 /// this invariant.
-const BROWSER_CACHE_PATHS: &[(&str, &str)] = &[
+pub(crate) const BROWSER_CACHE_PATHS: &[(&str, &str)] = &[
     ("Library/Caches/com.apple.Safari", "Safari"),
     (
         "Library/Application Support/Google/Chrome/Default/Cache",
@@ -85,10 +85,17 @@ impl CleanProvider for BrowserCaches {
         })
     }
     fn discover(&self, ctx: &ScanContext<'_>) -> Result<Vec<CleanItem>> {
-        let h = match home() {
-            Some(h) => h,
-            None => return Ok(Vec::new()),
-        };
+        Ok(home()
+            .map(|h| self.discover_in(ctx, &h))
+            .unwrap_or_default())
+    }
+    fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
+        execute_per_item(items, action, ID)
+    }
+}
+
+impl BrowserCaches {
+    pub(crate) fn discover_in(&self, ctx: &ScanContext<'_>, h: &Path) -> Vec<CleanItem> {
         let mut items = Vec::new();
         for (rel, app) in BROWSER_CACHE_PATHS {
             let path = h.join(rel);
@@ -108,10 +115,7 @@ impl CleanProvider for BrowserCaches {
             }
             items.extend(root_as_item(ctx, &cache2, ID, LABEL, RiskLevel::Review));
         }
-        Ok(items)
-    }
-    fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
-        execute_per_item(items, action, ID)
+        items
     }
 }
 

@@ -57,6 +57,8 @@ pub enum FfiReportOnlyReason {
     NotPerPathTrash,
     /// The selection rule can flag data still in use (app-orphans).
     UnreliableMatch,
+    /// Shown for its size; no removal is offered yet (ai-models).
+    SizeOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -351,6 +353,7 @@ impl From<ReportOnly> for FfiReportOnlyReason {
             ReportOnly::Destructive => Self::Destructive,
             ReportOnly::NotPerPathTrash => Self::NotPerPathTrash,
             ReportOnly::UnreliableMatch => Self::UnreliableMatch,
+            ReportOnly::SizeOnly => Self::SizeOnly,
         }
     }
 }

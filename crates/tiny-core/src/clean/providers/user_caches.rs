@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use super::{execute_per_item, run_tool, CleanProvider};
+use super::{execute_per_item, run_tool, split_from_user_caches, CleanProvider};
 use crate::clean::fs_safe::{dir_size_checked, list_children};
 use crate::clean::scan_context::ScanContext;
 use crate::clean::types::{CleanItem, Evidence, ExecAction, ExecReport, RiskLevel};
@@ -195,12 +195,13 @@ impl UserCaches {
         }
     }
 
-    fn list_caches(&self, ctx: &ScanContext<'_>, root: &Path) -> Result<Vec<CleanItem>> {
+    pub(crate) fn list_caches(&self, ctx: &ScanContext<'_>, root: &Path) -> Result<Vec<CleanItem>> {
         let paths: Vec<(PathBuf, String)> = list_children(root, ctx)
             .into_iter()
             .filter_map(|path| {
                 let name = path.file_name()?.to_str()?.to_string();
-                (!is_apple_cache(&name)).then_some((path, name))
+                let owned_elsewhere = is_apple_cache(&name) || split_from_user_caches(&name);
+                (!owned_elsewhere).then_some((path, name))
             })
             .collect();
         let ids: Vec<&str> = paths
@@ -387,6 +388,9 @@ mod tests {
                 "GeoServices",
                 "PassKit",
                 "Homebrew",
+                "ms-playwright",
+                "org.swift.swiftpm",
+                "SomeVendor",
             ],
         );
         let m = MockChecker::none();
@@ -394,7 +398,7 @@ mod tests {
         let items = provider(MockRunner::new())
             .list_caches(&ctx, &root)
             .unwrap();
-        assert_eq!(names(&items), vec!["Homebrew"]);
+        assert_eq!(names(&items), vec!["SomeVendor"], "split-out caches too");
         cleanup(&root);
     }
 
@@ -519,7 +523,7 @@ mod tests {
 
     #[test]
     fn discovery_resolves_all_ids_with_one_query_and_spawns_nothing_more_for_item_apps() {
-        let root = fixture("spawns", &["com.example.A", "com.example.B", "Homebrew"]);
+        let root = fixture("spawns", &["com.example.A", "com.example.B", "SomeVendor"]);
         let runner = Arc::new(MockRunner::new());
         let caches = UserCaches::with_runner(runner.clone());
         let m = MockChecker::none();
@@ -532,7 +536,7 @@ mod tests {
         assert_eq!(calls.len(), 1, "{calls:?}");
         assert!(calls[0].contains("== 'com.example.A'"));
         assert!(calls[0].contains("== 'com.example.B'"));
-        assert!(!calls[0].contains("Homebrew"));
+        assert!(!calls[0].contains("SomeVendor"));
         cleanup(&root);
     }
 

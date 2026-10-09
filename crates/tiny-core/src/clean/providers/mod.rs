@@ -9,19 +9,27 @@ use super::fs_safe::{dir_size_checked, list_children, remove_recursive_safe};
 use super::scan_context::ScanContext;
 use super::types::{CleanItem, ComesBack, ExecAction, ExecReport, RiskLevel};
 
+pub mod ai_models;
 pub mod android_sdk;
 pub mod app_orphans;
+pub mod browser_automation;
 pub mod browser_caches;
+pub mod browser_profiles;
 pub mod chat_caches;
 pub mod crash_reports;
 pub mod dev_caches;
+pub mod device_updates;
 pub mod docker;
 pub mod downloads_old;
+pub mod electron_app_caches;
 pub mod font_quicklook_caches;
 pub mod go_cache;
 pub mod gradle_maven;
+pub mod homebrew_cache;
 pub mod ios_simulators;
 pub mod jetbrains;
+pub mod js_tool_caches;
+pub mod macos_installers;
 pub mod mail_attachments;
 pub mod node_modules;
 pub mod project_activity;
@@ -31,6 +39,7 @@ pub mod rust_targets;
 pub mod screenshots_old;
 pub mod simulator_devices;
 pub mod streaming_caches;
+pub mod swift_packages;
 pub mod time_machine_local;
 pub mod trash;
 pub mod user_caches;
@@ -48,16 +57,18 @@ pub enum Family {
     SystemLogs,
     YourFiles,
     Leftovers,
+    AiModels,
 }
 
 impl Family {
     /// Display order.
-    pub const ALL: [Family; 5] = [
+    pub const ALL: [Family; 6] = [
         Family::AppsBrowsers,
         Family::DeveloperTools,
         Family::SystemLogs,
         Family::YourFiles,
         Family::Leftovers,
+        Family::AiModels,
     ];
 
     pub fn id(&self) -> &'static str {
@@ -67,6 +78,7 @@ impl Family {
             Family::SystemLogs => "system-logs",
             Family::YourFiles => "your-files",
             Family::Leftovers => "leftovers",
+            Family::AiModels => "ai-models",
         }
     }
 
@@ -77,6 +89,7 @@ impl Family {
             Family::SystemLogs => "System & logs",
             Family::YourFiles => "Your files",
             Family::Leftovers => "Leftovers",
+            Family::AiModels => "AI models",
         }
     }
 }
@@ -142,7 +155,7 @@ const fn rebuild(command: &'static str) -> ComesBack {
 /// `all_providers`. A new category is added here and in `all_providers`.
 pub const CATEGORIES: &[CategoryInfo] = {
     use ComesBack::{AppRecreates, NotRecoverable, Redownload, TrashOnly};
-    use Family::{AppsBrowsers, DeveloperTools, Leftovers, SystemLogs, YourFiles};
+    use Family::{AiModels, AppsBrowsers, DeveloperTools, Leftovers, SystemLogs, YourFiles};
     &[
         category("user-logs", SystemLogs, AppRecreates, None),
         category(
@@ -184,6 +197,15 @@ pub const CATEGORIES: &[CategoryInfo] = {
         ),
         category("android-sdk", DeveloperTools, Redownload, None),
         category("go-cache", DeveloperTools, rebuild("go build"), None),
+        category(
+            "browser-automation",
+            DeveloperTools,
+            rebuild("npx playwright install, or the tool's own install command"),
+            None,
+        ),
+        category("swift-packages", DeveloperTools, Redownload, None),
+        category("js-tool-caches", DeveloperTools, Redownload, None),
+        category("homebrew-cache", DeveloperTools, Redownload, None),
         // Runs `docker image prune` / `docker builder prune`, not a per-path move.
         category(
             "docker",
@@ -204,6 +226,8 @@ pub const CATEGORIES: &[CategoryInfo] = {
         category("streaming-caches", AppsBrowsers, Redownload, None),
         category("chat-caches", AppsBrowsers, Redownload, None),
         category("browser-caches", AppsBrowsers, AppRecreates, None),
+        category("browser-profiles", AppsBrowsers, AppRecreates, None),
+        category("electron-app-caches", AppsBrowsers, AppRecreates, None),
         category("quarantine", SystemLogs, AppRecreates, None),
         category("crash-reports", SystemLogs, AppRecreates, None),
         // Folder names are matched against bundle IDs, so live data such as
@@ -222,6 +246,15 @@ pub const CATEGORIES: &[CategoryInfo] = {
             Some(ReportOnly::Destructive),
         ),
         category("font-quicklook-caches", SystemLogs, AppRecreates, None),
+        category("device-updates", Leftovers, Redownload, None),
+        category("macos-installers", Leftovers, Redownload, None),
+        // Measured only until per-tool removal (`ollama rm`, ...) exists.
+        category(
+            "ai-models",
+            AiModels,
+            Redownload,
+            Some(ReportOnly::SizeOnly),
+        ),
         // Empty Trash.
         category(
             "trash",
@@ -329,6 +362,8 @@ pub enum ReportOnly {
     NotPerPathTrash,
     /// The rule that selects items can flag data still in use.
     UnreliableMatch,
+    /// Shown for its size; no removal is offered yet.
+    SizeOnly,
 }
 
 /// `None` when the desktop may move this provider's items to Trash.
@@ -389,6 +424,10 @@ pub fn all_providers_with(
         )),
         Box::new(android_sdk::AndroidSdk::new(opts.idle_days)),
         Box::new(go_cache::GoCache::with_runner(runner.clone())),
+        Box::new(browser_automation::BrowserAutomation),
+        Box::new(swift_packages::SwiftPackages),
+        Box::new(js_tool_caches::JsToolCaches),
+        Box::new(homebrew_cache::HomebrewCache),
         Box::new(docker::Docker::with_runner(runner.clone())),
         Box::new(docker::DockerVolumes::with_runner(runner.clone())),
         Box::new(downloads_old::DownloadsOld::with_runner(
@@ -403,6 +442,8 @@ pub fn all_providers_with(
         Box::new(streaming_caches::StreamingCaches::new()),
         Box::new(chat_caches::ChatCaches::new()),
         Box::new(browser_caches::BrowserCaches::new()),
+        Box::new(browser_profiles::BrowserProfiles),
+        Box::new(electron_app_caches::ElectronAppCaches),
         Box::new(quarantine::Quarantine),
         Box::new(crash_reports::CrashReports),
         Box::new(app_orphans::AppOrphans::with_runner(runner.clone())),
@@ -412,8 +453,44 @@ pub fn all_providers_with(
         Box::new(font_quicklook_caches::FontQuicklookCaches::with_runner(
             runner,
         )),
+        Box::new(device_updates::DeviceUpdates),
+        Box::new(macos_installers::MacosInstallers),
+        Box::new(ai_models::AiModels),
         Box::new(trash::TrashProvider),
     ]
+}
+
+/// Children of `~/Library/Caches` split out of `user-caches` into their own
+/// categories, so no path is offered twice. Each provider declares its own.
+pub(crate) fn split_from_user_caches(name: &str) -> bool {
+    [
+        browser_automation::LIBRARY_CACHES,
+        swift_packages::LIBRARY_CACHES,
+        js_tool_caches::LIBRARY_CACHES,
+        homebrew_cache::LIBRARY_CACHES,
+    ]
+    .iter()
+    .any(|names| names.contains(&name))
+}
+
+pub(crate) fn home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(std::path::PathBuf::from)
+}
+
+/// Each path in `roots` that is a real directory (never a symlink) as one
+/// item, in order. Unlike `root_as_item`, a symlinked root is skipped.
+pub(crate) fn dir_roots_as_items(
+    ctx: &ScanContext<'_>,
+    roots: &[std::path::PathBuf],
+    category_id: &str,
+    category_label: &str,
+    risk: RiskLevel,
+) -> Vec<CleanItem> {
+    roots
+        .iter()
+        .filter(|root| super::fs_safe::is_dir_safe(root))
+        .flat_map(|root| root_as_item(ctx, root, category_id, category_label, risk))
+        .collect()
 }
 
 /// Canonical list of category ids accepted by `--category`.
@@ -570,6 +647,63 @@ pub(crate) fn move_to_trash(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A throwaway folder standing in for `$HOME` (or `/Applications`) in
+/// provider fixtures; removed on drop. Never the real home (R6).
+#[cfg(test)]
+pub(crate) mod test_home {
+    use super::CleanItem;
+    use std::path::{Path, PathBuf};
+
+    pub struct TestHome(tempfile::TempDir);
+
+    impl TestHome {
+        pub fn new(label: &str) -> Self {
+            Self(
+                tempfile::Builder::new()
+                    .prefix(&format!("tiny-{label}-"))
+                    .tempdir()
+                    .unwrap(),
+            )
+        }
+
+        pub fn path(&self) -> &Path {
+            self.0.path()
+        }
+
+        pub fn dir(&self, rel: &str) -> PathBuf {
+            let path = self.path().join(rel);
+            std::fs::create_dir_all(&path).unwrap();
+            path
+        }
+
+        /// A file of `len` bytes, creating its parents.
+        pub fn file(&self, rel: &str, len: usize) -> PathBuf {
+            let path = self.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, vec![0u8; len]).unwrap();
+            path
+        }
+
+        /// `link` pointing at `target`, both relative to the fixture.
+        pub fn symlink(&self, link: &str, target: &str) {
+            let link = self.path().join(link);
+            std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(self.path().join(target), link).unwrap();
+        }
+
+        /// Item paths relative to the fixture, in discovery order.
+        pub fn relative(&self, items: &[CleanItem]) -> Vec<String> {
+            items
+                .iter()
+                .map(|item| {
+                    let rel = item.path.strip_prefix(self.path()).unwrap();
+                    rel.to_string_lossy().into_owned()
+                })
+                .collect()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,7 +718,8 @@ mod tests {
                 "developer-tools",
                 "system-logs",
                 "your-files",
-                "leftovers"
+                "leftovers",
+                "ai-models"
             ]
         );
         let labels: Vec<&str> = Family::ALL.iter().map(Family::label).collect();
@@ -595,7 +730,8 @@ mod tests {
                 "Developer tools",
                 "System & logs",
                 "Your files",
-                "Leftovers"
+                "Leftovers",
+                "AI models"
             ]
         );
     }
@@ -732,5 +868,100 @@ mod tests {
     #[should_panic(expected = "unknown category id")]
     fn category_family_panics_on_unknown() {
         let _ = category_family("definitely-not-a-category");
+    }
+
+    /// AC5: one fixture home holding every path the new categories and the
+    /// providers they border read; no path is offered twice and none sits
+    /// inside another provider's item.
+    #[test]
+    fn no_path_is_offered_by_two_providers() {
+        use crate::clean::process::test_support::MockChecker;
+        let home = test_home::TestHome::new("overlap");
+        let caches = "Library/Caches";
+        for name in [
+            "ms-playwright",
+            "ms-playwright-mcp",
+            "Cypress",
+            "org.swift.swiftpm",
+            "CocoaPods",
+            "org.carthage.CarthageKit",
+            "electron",
+            "node-gyp",
+            "deno",
+            "Homebrew",
+            "Google",
+            "com.example.Other",
+        ] {
+            home.dir(&format!("{caches}/{name}/x"));
+        }
+        for dir in [".cache/puppeteer", ".cache/selenium", ".bun/install/cache"] {
+            home.dir(dir);
+        }
+        let support = "Library/Application Support";
+        for dir in [
+            "Google/Chrome/Default/Cache",
+            "Google/Chrome/Default/Code Cache",
+            "Arc/User Data/Default/Cache",
+            "Arc/User Data/Default/Code Cache",
+            "Notion/Cache",
+            "Code/Cache",
+            "Slack/Cache",
+            "discord/Cache",
+        ] {
+            home.dir(&format!("{support}/{dir}"));
+        }
+        home.file("Library/iTunes/iPhone Software Updates/a.ipsw", 1);
+        home.dir(".ollama/models");
+        home.dir(".cache/huggingface/hub/models--a--b");
+
+        let none = MockChecker::none();
+        let ctx = ScanContext::new(None, &none);
+        let h = home.path();
+        let user_caches = user_caches::UserCaches::with_runner(Arc::new(
+            crate::runner::test_support::MockRunner::new(),
+        ));
+        let mut items = user_caches.list_caches(&ctx, &h.join(caches)).unwrap();
+        items.extend(browser_caches::BrowserCaches::new().discover_in(&ctx, h));
+        items.extend(browser_automation::BrowserAutomation.discover_in(&ctx, h));
+        items.extend(swift_packages::SwiftPackages.discover_in(&ctx, h));
+        items.extend(js_tool_caches::JsToolCaches.discover_in(&ctx, h));
+        items.extend(homebrew_cache::HomebrewCache.discover_in(&ctx, h));
+        items.extend(browser_profiles::BrowserProfiles.discover_in(&ctx, h));
+        items.extend(electron_app_caches::ElectronAppCaches.discover_in(&ctx, h));
+        items.extend(device_updates::DeviceUpdates.discover_in(&ctx, h));
+        items.extend(ai_models::AiModels.discover_in(&ctx, h));
+
+        for (i, a) in items.iter().enumerate() {
+            for b in &items[i + 1..] {
+                assert!(
+                    !a.path.starts_with(&b.path) && !b.path.starts_with(&a.path),
+                    "{} ({}) overlaps {} ({})",
+                    a.path.display(),
+                    a.category_id,
+                    b.path.display(),
+                    b.category_id
+                );
+            }
+        }
+        // Every new category found its fixture, so the check above saw it.
+        for id in [
+            "browser-automation",
+            "swift-packages",
+            "js-tool-caches",
+            "homebrew-cache",
+            "browser-profiles",
+            "electron-app-caches",
+            "device-updates",
+            "ai-models",
+        ] {
+            assert!(items.iter().any(|i| i.category_id == id), "{id}");
+        }
+        let mut user: Vec<_> = items
+            .iter()
+            .filter(|i| i.category_id == "user-caches")
+            .map(|i| i.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        user.sort();
+        assert_eq!(user, ["Google", "com.example.Other"]);
     }
 }
