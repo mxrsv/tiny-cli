@@ -22,12 +22,6 @@ impl ProcessChecker for PgrepChecker {
     }
 }
 
-/// Runtime helper used by providers when they only need a one-shot check.
-/// Tests should construct their own `ProcessChecker` instead of calling this.
-pub fn is_running(name: &str) -> bool {
-    PgrepChecker.is_running(name)
-}
-
 /// Returns true if any of the given names is running. Used by providers
 /// that gate on multiple process names (e.g. cargo + rustc).
 #[allow(dead_code)]
