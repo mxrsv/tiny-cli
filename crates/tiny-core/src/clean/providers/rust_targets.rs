@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::error::Result;
 
+use super::project_activity::assess;
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
 use crate::clean::fs_safe::{dir_size_checked, walk_with};
 use crate::clean::scan_context::ScanContext;
@@ -15,7 +16,6 @@ const LABEL: &str = "Rust target/ (idle)";
 pub struct RustTargets {
     pub idle_days: u64,
     pub search_roots: Vec<PathBuf>,
-    #[allow(dead_code)] // read by the git-aware idle check (plan T2)
     runner: Arc<dyn CommandRunner>,
 }
 
@@ -56,6 +56,10 @@ impl CleanProvider for RustTargets {
         let mut items = Vec::new();
         for root in &self.search_roots {
             for found in find_rust_targets(ctx, root, self.idle_days) {
+                let manifest = found.with_file_name("Cargo.toml");
+                let Some(evidence) = assess(&*self.runner, &manifest, self.idle_days)? else {
+                    continue;
+                };
                 let size = dir_size_checked(&found, ctx);
                 items.push(CleanItem {
                     category_id: ID.to_string(),
@@ -63,7 +67,7 @@ impl CleanProvider for RustTargets {
                     path: found,
                     size,
                     risk: RiskLevel::Review,
-                    evidence: Vec::new(),
+                    evidence,
                 });
             }
         }
@@ -166,6 +170,48 @@ mod tests {
         let found = find_rust_targets(&ScanContext::unchecked(), &root, 30);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0], outer);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
+
+    use crate::clean::types::Evidence;
+    use crate::runner::test_support::MockRunner;
+
+    fn provider(root: &Path, runner: MockRunner) -> RustTargets {
+        let mut p = RustTargets::with_runner(30, Arc::new(runner));
+        p.search_roots = vec![root.to_path_buf()];
+        p
+    }
+
+    fn idle_project(root: &Path) -> PathBuf {
+        let proj = root.join("p");
+        fs::create_dir_all(proj.join("target")).unwrap();
+        let manifest = proj.join("Cargo.toml");
+        fs::write(&manifest, b"[package]\nname = \"x\"\n").unwrap();
+        backdate(&manifest, 90);
+        proj
+    }
+
+    #[test]
+    fn discover_offers_idle_project_outside_git_with_evidence() {
+        let root = tempdir("discover-nogit");
+        idle_project(&root);
+        let items = provider(&root, MockRunner::new())
+            .discover(&ScanContext::unchecked())
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].evidence.last(), Some(&Evidence::NotGitRepo));
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
+
+    #[test]
+    fn discover_fails_when_git_is_unavailable_for_a_repo_project() {
+        let root = tempdir("discover-nogit-bin");
+        fs::create_dir_all(root.join(".git")).unwrap();
+        idle_project(&root);
+        let err = provider(&root, MockRunner::new())
+            .discover(&ScanContext::unchecked())
+            .unwrap_err();
+        assert!(err.to_string().contains("git is unavailable"), "{err}");
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
 }

@@ -3,10 +3,11 @@ use std::sync::Arc;
 
 use crate::error::Result;
 
+use super::project_activity::assess;
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
 use crate::clean::fs_safe::{dir_size_checked, walk_with};
 use crate::clean::scan_context::ScanContext;
-use crate::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
+use crate::clean::types::{CleanItem, Evidence, ExecAction, ExecReport, RiskLevel};
 use crate::runner::{CommandRunner, RealRunner};
 
 const ID: &str = "python-caches";
@@ -17,7 +18,6 @@ const VENV_NAMES: &[&str] = &["venv", ".venv", "env"];
 pub struct PythonCaches {
     pub idle_days: u64,
     pub search_roots: Vec<PathBuf>,
-    #[allow(dead_code)] // read by the git-aware idle check (plan T2)
     runner: Arc<dyn CommandRunner>,
 }
 
@@ -72,6 +72,13 @@ impl CleanProvider for PythonCaches {
                 });
             }
             for found in find_orphan_venv(ctx, root, self.idle_days) {
+                let Some(manifest) = found.parent().and_then(python_manifest) else {
+                    continue;
+                };
+                let Some(mut evidence) = assess(&*self.runner, &manifest, self.idle_days)? else {
+                    continue;
+                };
+                evidence.push(Evidence::VenvMarker);
                 let size = dir_size_checked(&found, ctx);
                 items.push(CleanItem {
                     category_id: ID.to_string(),
@@ -79,7 +86,7 @@ impl CleanProvider for PythonCaches {
                     path: found,
                     size,
                     risk: RiskLevel::Review,
-                    evidence: Vec::new(),
+                    evidence,
                 });
             }
         }
@@ -256,6 +263,42 @@ mod tests {
             .unwrap();
         let stale = find_orphan_venv(&ScanContext::unchecked(), &root, 30);
         assert_eq!(stale.len(), 1);
+        let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
+    }
+
+    use crate::runner::test_support::MockRunner;
+
+    fn provider(root: &Path, runner: MockRunner) -> PythonCaches {
+        let mut p = PythonCaches::with_runner(30, Arc::new(runner));
+        p.search_roots = vec![root.to_path_buf()];
+        p
+    }
+
+    #[test]
+    fn discover_marks_venv_and_leaves_pycache_without_evidence() {
+        let root = tempdir("discover");
+        let proj = root.join("p");
+        make_venv(&proj.join(".venv"));
+        fs::create_dir_all(proj.join("src/__pycache__")).unwrap();
+        let manifest = proj.join("pyproject.toml");
+        fs::write(&manifest, b"[project]\nname=\"x\"\n").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(90 * 86_400);
+        std::fs::File::open(&manifest)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let items = provider(&root, MockRunner::new())
+            .discover(&ScanContext::unchecked())
+            .unwrap();
+        assert_eq!(items.len(), 2);
+        let venv = items.iter().find(|i| i.path.ends_with(".venv")).unwrap();
+        assert_eq!(venv.evidence.last(), Some(&Evidence::VenvMarker));
+        assert!(venv.evidence.contains(&Evidence::NotGitRepo));
+        let pyc = items
+            .iter()
+            .find(|i| i.path.ends_with("__pycache__"))
+            .unwrap();
+        assert!(pyc.evidence.is_empty());
         let _ = crate::clean::fs_safe::remove_recursive_safe(&root);
     }
 }
