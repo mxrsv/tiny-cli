@@ -58,11 +58,9 @@ fn run_timer(total_secs: u64) {
     let bar_width: u64 = 30;
     for elapsed in 0..=total_secs {
         let remaining = total_secs - elapsed;
-        let filled = if total_secs == 0 {
-            bar_width
-        } else {
-            (elapsed * bar_width) / total_secs
-        };
+        let filled = (elapsed * bar_width)
+            .checked_div(total_secs)
+            .unwrap_or(bar_width);
         let empty = bar_width - filled;
         let bar = format!("{}{}", "#".repeat(filled as usize), "-".repeat(empty as usize));
         let mins = remaining / 60;

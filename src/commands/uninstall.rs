@@ -330,8 +330,8 @@ fn dir_size(path: &Path) -> u64 {
 
 fn sort_apps(mut apps: Vec<AppEntry>, sort: &SortBy) -> Vec<AppEntry> {
     match sort {
-        SortBy::Size => apps.sort_by(|a, b| b.size.cmp(&a.size)),
-        SortBy::Name => apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+        SortBy::Size => apps.sort_by_key(|a| std::cmp::Reverse(a.size)),
+        SortBy::Name => apps.sort_by_key(|a| a.name.to_lowercase()),
         SortBy::LastUsed => apps.sort_by(|a, b| {
             // Larger "days ago" = less recently used = surface first.
             // None (never tracked) ranks last.
