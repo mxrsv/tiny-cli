@@ -53,12 +53,19 @@ struct CleanReviewSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(candidate.path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
                     .help(candidate.path)
+                if let line = CleanCopy.evidenceLine(candidate.evidence) {
+                    Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                if let reason = CleanCopy.sensitiveReason(candidate) {
+                    Label(reason, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange).lineLimit(2)
+                }
                 if let parent {
                     Text(CleanCopy.movesWith(parent)).font(.caption).foregroundStyle(.secondary)
                 } else if let excluded = clean.preview?.excluded.first(where: { $0.candidateId == candidate.id && $0.blocksReview }) {
                     Text(clean.exclusionText(excluded)).font(.caption).foregroundStyle(.orange)
                 }
             }
+            if CleanState.isSensitive(candidate) { Pill(text: "PRIVATE", tint: .orange) }
             if candidate.risk != .safe { Pill(text: "REVIEW", tint: .orange) }
             Spacer(minLength: 8)
             Text((candidate.unreadableEntries > 0 ? "≥ " : "") + CleanCopy.bytes(candidate.sizeBytes))

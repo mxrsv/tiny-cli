@@ -105,14 +105,61 @@ final class CleanState {
             && category.risk != .destructive && !category.candidates.isEmpty
     }
 
+    /// Looks private (recovery codes, keys, ...): never selected by a category-level action.
+    static func isSensitive(_ candidate: FfiCleanCandidate) -> Bool {
+        candidate.evidence.contains { if case .sensitive = $0 { return true } else { return false } }
+    }
+
     /// Only safe Move-to-Trash categories start selected, and only safe items that
-    /// would not carry a review item along (the same path or an ancestor of one).
+    /// would not carry a review or private-looking item along (the same path or an
+    /// ancestor of one). Private-looking items are never preselected.
     static func preselected(_ discovery: FfiDiscovery) -> Set<String> {
-        let review = discovery.categories.flatMap(\.candidates).filter { $0.risk != .safe }.map(\.path)
+        let guarded = discovery.categories.flatMap(\.candidates).filter { $0.risk != .safe || isSensitive($0) }.map(\.path)
         return Set(discovery.categories.filter { isSelectable($0) && $0.risk == .safe }
             .flatMap(\.candidates)
-            .filter { candidate in candidate.risk == .safe && !review.contains { contains(candidate.path, $0) } }
+            .filter { candidate in
+                candidate.risk == .safe && !isSensitive(candidate) && !guarded.contains { contains(candidate.path, $0) }
+            }
             .map(\.id))
+    }
+
+    // MARK: Groups
+
+    /// How the Clean screen sections its tiles, by what the user can expect after a move.
+    enum Group: CaseIterable { case rebuilt, yourFiles, reportOnly }
+
+    struct GroupSection: Identifiable {
+        let group: Group
+        let categories: [FfiCleanCategory]
+        var id: Group { group }
+    }
+
+    struct Layout {
+        /// Non-empty groups in display order.
+        var sections: [GroupSection]
+        /// Scanned, movable categories with nothing to offer: one line, no tiles.
+        var checkedEmpty: [FfiCleanCategory]
+    }
+
+    /// Only categories whose items a tool or app recreates are "rebuilt"; a missing or
+    /// permanent `comesBack` is never described as rebuilt, so it lands under "Your files".
+    static func group(of category: FfiCleanCategory) -> Group {
+        guard category.desktopAction == .moveToTrash else { return .reportOnly }
+        switch category.comesBack {
+        case .rebuild?, .redownload?, .appRecreates?: return .rebuilt
+        case .trashOnly?, .notRecoverable?, nil: return .yourFiles
+        }
+    }
+
+    /// Categories with another status (app running, unavailable, failed) keep their
+    /// tile: they tell the user what was skipped and why.
+    static func layout(_ categories: [FfiCleanCategory]) -> Layout {
+        let empty = { (category: FfiCleanCategory) in
+            category.desktopAction == .moveToTrash && category.status == .found && category.candidates.isEmpty
+        }
+        let shown = categories.filter { !empty($0) }
+        let sections = Group.allCases.map { group in GroupSection(group: group, categories: shown.filter { self.group(of: $0) == group }) }
+        return Layout(sections: sections.filter { !$0.categories.isEmpty }, checkedEmpty: categories.filter(empty))
     }
 
     /// Whether moving `ancestor` moves `path`: the same path or one inside it.
@@ -161,7 +208,8 @@ final class CleanState {
 
     /// Any selected item clears the category. Otherwise a safe category adds only
     /// its safe items that carry no review item; review items are ticked one by
-    /// one, or by clicking a review category.
+    /// one, or by clicking a review category. Private-looking items are only ever
+    /// ticked one by one, so a category with some of them tops out at `.mixed`.
     func toggle(category id: String) {
         guard phase == .ready, let category = categories.first(where: { $0.id == id }), Self.isSelectable(category) else { return }
         let ids = Set(category.candidates.map(\.id))
@@ -170,7 +218,7 @@ final class CleanState {
         } else if category.risk == .safe, let discovery {
             selection.formUnion(Self.preselected(discovery).intersection(ids))
         } else {
-            selection.formUnion(ids)
+            selection.formUnion(category.candidates.filter { !Self.isSensitive($0) }.map(\.id))
         }
         invalidatePreview()
     }

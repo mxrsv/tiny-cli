@@ -44,10 +44,25 @@ struct CleanView: View {
     }
 
     private var tiles: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: Theme.gap)], spacing: Theme.gap) {
-                ForEach(clean.categories, id: \.id) { CleanTile(category: $0, clean: clean) }
-            }.padding(.bottom, 4)
+        let layout = CleanState.layout(clean.categories)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                ForEach(layout.sections) { section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(CleanCopy.groupTitle(section.group)).font(.system(size: 17, weight: .semibold, design: .rounded))
+                            Text(CleanCopy.groupNote(section.group)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: Theme.gap)], spacing: Theme.gap) {
+                            ForEach(section.categories, id: \.id) { CleanTile(category: $0, clean: clean) }
+                        }
+                    }
+                }
+                if !layout.checkedEmpty.isEmpty {
+                    Label(CleanCopy.checkedEmpty(layout.checkedEmpty.map(\.label)), systemImage: "checkmark.circle")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }.padding(.bottom, 4).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -56,7 +71,7 @@ struct CleanView: View {
             Image(systemName: "trash").foregroundStyle(Theme.accent)
             Text("\(CleanCopy.items(clean.effectiveSelection.count)) selected · \(CleanCopy.bytes(clean.selectedBytes)) measured at scan")
                 .monospacedDigit()
-            Text("Review-risk items are never selected for you.").font(.caption).foregroundStyle(.secondary)
+            Text("Review-risk and private-looking items are never selected for you.").font(.caption).foregroundStyle(.secondary)
             Spacer()
             Button("Review…") { clean.openReview() }
                 .buttonStyle(.borderedProminent).disabled(!clean.canReview)
@@ -128,6 +143,10 @@ struct CleanTile: View {
             Text(category.status == .found ? CleanCopy.size(category) : "—").font(Theme.number(24))
             Text(category.inclusionReason).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
+            if let comesBack = category.comesBack {
+                note(CleanCopy.comesBack(comesBack), symbol: "arrow.uturn.backward",
+                     color: comesBack == .notRecoverable ? .orange : .secondary)
+            }
             footer(selectable: selectable, selected: selected)
         }
         .padding(16)
@@ -146,11 +165,11 @@ struct CleanTile: View {
             note(status, symbol: "exclamationmark.circle", color: .orange)
         } else if category.desktopAction != .moveToTrash {
             EmptyView()
-        } else if category.candidates.isEmpty {
-            note("Nothing found", symbol: "checkmark.circle", color: .secondary)
         } else {
             Text("\(selected) of \(CleanCopy.items(category.candidates.count)) selected").font(.caption).foregroundStyle(.secondary)
         }
+        let sensitive = category.candidates.filter(CleanState.isSensitive).count
+        if sensitive > 0 { note(CleanCopy.privateNote(sensitive), symbol: "exclamationmark.shield", color: .orange) }
         if let refused = CleanCopy.refused(category) { note(refused, symbol: "lock", color: .secondary) }
         if CleanCopy.isLowerBound(category) {
             note("Some entries could not be read, so the size is a lower bound.", symbol: "questionmark.folder", color: .secondary)
