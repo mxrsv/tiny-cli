@@ -36,7 +36,27 @@ One commit per task; T1 lands before T2–T6 use it.
 ## Progress
 
 - 2026-10-09: audit and T0 changes made, not committed. Spec drafted.
+- 2026-10-09: T0 committed on `feat/native-desktop` (`c5e313b`), docs (`9979650`).
+  Wave 0 contract on `feat/clean-trust` (`1a28d55`): core/ffi 217 + 38 tests,
+  clippy (incl. `tiny`), fmt, `test-native.sh` 34 checks pass. Wave 1 started in
+  worktrees under `~/Documents/Development/Personal/tiny-cli-worktrees/`
+  (`idle-git`, `downloads`, `user-caches`, `swift-ui`), each with an APFS clone of
+  `target/` (`cp -c -R`, ~5 s); a cold `cargo test -p tiny-core` there took 7.8 s.
+
+- 2026-10-09: wave 1 merged into `feat/clean-trust`: T3 `f83c912`, T2 `ef7b326`,
+  T4 `31c19d8` + `0efd64c` (ShipIt helpers via parent bundle id, mdfind in chunks of 50),
+  T6 `3c03c2c`. Integration fixes: checked discovery keeps empty categories so the
+  "Checked, nothing found" line lists them; a tile with unreadable or refused paths is
+  not collapsed; `clean`/`review` snapshot scenes use real read-only discovery again,
+  `review-fixture` shows the fixture evidence; inclusion reasons match the new rules.
+  Gate: core/ffi 255 + 38 tests, clippy incl. `tiny`, fmt, `test-native.sh` 34 checks.
+  T7 real-data scan (scan only): `tiny-cli/target` and every node_modules not offered,
+  no `com.apple.*` under User caches, VS Code categories skipped while `Code` runs,
+  Downloads 58 items with 5 flagged private; screenshots in `/tmp/tiny-clean-trust-shots/real/`.
 
 ## Handoff
 
-- Blocked on: the open simulator decision (T5 only).
+- Blocked on: the simulator decision (T5) and whether a dirty work tree with only old
+  edits still blocks the idle rule (SR1 follow-up).
+- AC4 (user approves screenshots) pending. Merge into `feat/native-desktop` needs the
+  user's go-ahead; another session has uncommitted Clean UI changes there.
