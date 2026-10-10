@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use super::{execute_per_item, is_idle, CleanProvider};
+use super::{execute_per_item, is_idle, read_root, CleanProvider};
 use crate::commands::clean::fs_safe::{dir_size_safe, is_dir_safe};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -41,7 +41,7 @@ impl CleanProvider for DownloadsOld {
             Some(h) => h,
             None => return Ok(Vec::new()),
         };
-        Ok(list_old_files(&h.join("Downloads"), self.idle_days))
+        list_old_files(&h.join("Downloads"), self.idle_days)
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
@@ -51,11 +51,11 @@ impl CleanProvider for DownloadsOld {
 /// Lists every file (not directory) directly inside `dir` whose mtime is
 /// older than `idle_days`. Non-recursive — subdirs are not descended (we
 /// don't want to recurse into a user's curated download folders).
-pub fn list_old_files(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
+pub fn list_old_files(dir: &Path, idle_days: u64) -> Result<Vec<CleanItem>> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(dir) {
-        Ok(it) => it,
-        Err(_) => return out,
+    let entries = match read_root(dir)? {
+        Some(it) => it,
+        None => return Ok(out),
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -78,7 +78,7 @@ pub fn list_old_files(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
             risk: RiskLevel::Review,
         });
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -120,7 +120,7 @@ mod tests {
         fs::write(&fresh, b"new").unwrap();
         fs::write(&stale, b"old").unwrap();
         backdate(&stale, 60);
-        let found = list_old_files(&dir, 30);
+        let found = list_old_files(&dir, 30).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, stale);
         let _ = fs::remove_dir_all(&dir);
@@ -133,7 +133,7 @@ mod tests {
         let f = dir.join("subdir/inside.txt");
         fs::write(&f, b"x").unwrap();
         backdate(&f, 60);
-        let found = list_old_files(&dir, 30);
+        let found = list_old_files(&dir, 30).unwrap();
         // Subdirs not descended; even though file is old it's not flagged.
         assert!(found.is_empty());
         let _ = fs::remove_dir_all(&dir);

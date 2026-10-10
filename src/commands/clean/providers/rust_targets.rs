@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use super::{dev_search_roots, execute_per_item, is_idle, CleanProvider};
-use crate::commands::clean::fs_safe::{dir_size_safe, walk_with};
+use crate::commands::clean::fs_safe::{dir_size_safe, is_file_safe, walk_with};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
 const ID: &str = "rust-targets";
@@ -70,7 +70,7 @@ pub fn find_rust_targets(root: &Path, idle_days: u64) -> Vec<PathBuf> {
         if is_target {
             if let Some(parent) = path.parent() {
                 let manifest = parent.join("Cargo.toml");
-                if manifest.is_file() && is_idle(&manifest, idle_days) {
+                if is_file_safe(&manifest) && is_idle(&manifest, idle_days) {
                     found.push(path.to_path_buf());
                 }
             }

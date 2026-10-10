@@ -115,7 +115,7 @@ pub fn all_providers(opts: &crate::cli::CleanOpts) -> Vec<Box<dyn CleanProvider>
     vec![
         Box::new(user_logs::UserLogs),
         Box::new(xcode::XcodeDerivedData),
-        Box::new(user_caches::UserCaches),
+        Box::new(user_caches::UserCaches::new()),
         Box::new(xcode::XcodeArchives),
         Box::new(xcode::XcodeDeviceSupport),
         Box::new(dev_caches::CargoCache),
@@ -221,18 +221,30 @@ pub(crate) fn is_idle(manifest_path: &std::path::Path, idle_days: u64) -> bool {
     elapsed.as_secs() > idle_days * 86_400
 }
 
+/// Opens `root` for listing. A missing root is `Ok(None)`: nothing to
+/// clean. Any other failure, such as a macOS privacy denial, is an error so
+/// discovery reports the category as not scanned instead of empty.
+pub(crate) fn read_root(root: &Path) -> Result<Option<std::fs::ReadDir>> {
+    match std::fs::read_dir(root) {
+        Ok(it) => Ok(Some(it)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(anyhow!("cannot read {}: {}", root.display(), e)),
+    }
+}
+
 /// Lists immediate children of `root` as `CleanItem`s, sized via the
-/// symlink-safe walk. Returns empty when `root` does not exist.
+/// symlink-safe walk. Returns empty when `root` does not exist and an
+/// error when it exists but cannot be read.
 pub(crate) fn top_level_entries(
     root: &Path,
     category_id: &str,
     category_label: &str,
     risk: RiskLevel,
-) -> Vec<CleanItem> {
+) -> Result<Vec<CleanItem>> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(root) {
-        Ok(it) => it,
-        Err(_) => return out,
+    let entries = match read_root(root)? {
+        Some(it) => it,
+        None => return Ok(out),
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -245,7 +257,7 @@ pub(crate) fn top_level_entries(
             risk,
         });
     }
-    out
+    Ok(out)
 }
 
 /// Treats `root` itself as a single CleanItem (used for category-rooted

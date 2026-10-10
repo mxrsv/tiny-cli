@@ -33,7 +33,7 @@ pub fn aggregate(files: &[FileEntry]) -> Vec<ExtStat> {
             total_size,
         })
         .collect();
-    out.sort_by(|a, b| b.total_size.cmp(&a.total_size));
+    out.sort_by_key(|e| std::cmp::Reverse(e.total_size));
     out
 }
 

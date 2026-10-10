@@ -1,13 +1,15 @@
 //! Sorting helpers shared between text and JSON reporters.
 
+use std::cmp::Reverse;
+
 use crate::cli::ScanSort;
 
 use super::types::FileEntry;
 
 pub fn sort_files(files: &mut [FileEntry], by: ScanSort) {
     match by {
-        ScanSort::Size => files.sort_by(|a, b| b.size.cmp(&a.size)),
-        ScanSort::Age => files.sort_by(|a, b| b.age_secs.cmp(&a.age_secs)),
+        ScanSort::Size => files.sort_by_key(|f| Reverse(f.size)),
+        ScanSort::Age => files.sort_by_key(|f| Reverse(f.age_secs)),
         ScanSort::Path => files.sort_by(|a, b| a.path.cmp(&b.path)),
     }
 }

@@ -26,6 +26,9 @@ pub struct CategoryGroup {
 pub struct DiscoveryReport {
     pub groups: Vec<CategoryGroup>,
     pub skipped_running: Vec<(String, String)>, // (category_id, app)
+    /// Categories whose scan failed, with the error. One failing category
+    /// never hides the others.
+    pub failed: Vec<(String, String)>, // (category_id, error)
 }
 
 /// Returns the providers selected by the CLI options. Filtering rules from
@@ -55,10 +58,17 @@ pub fn discover_with_checker(
     opts: &CleanOpts,
     checker: &dyn ProcessChecker,
 ) -> Result<DiscoveryReport> {
-    let providers = select_providers(opts);
+    discover_providers(select_providers(opts), checker)
+}
+
+fn discover_providers(
+    providers: Vec<Box<dyn CleanProvider>>,
+    checker: &dyn ProcessChecker,
+) -> Result<DiscoveryReport> {
     let mut groups_by_id: BTreeMap<String, CategoryGroup> = BTreeMap::new();
     let mut order: Vec<String> = Vec::new();
     let mut skipped: Vec<(String, String)> = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
 
     for provider in providers {
         if !provider.available() {
@@ -70,7 +80,13 @@ pub fn discover_with_checker(
                 continue;
             }
         }
-        let items = provider.discover()?;
+        let items = match provider.discover() {
+            Ok(items) => items,
+            Err(e) => {
+                failed.push((provider.id().to_string(), format!("{:#}", e)));
+                continue;
+            }
+        };
         if items.is_empty() {
             continue;
         }
@@ -99,6 +115,7 @@ pub fn discover_with_checker(
     Ok(DiscoveryReport {
         groups,
         skipped_running: skipped,
+        failed,
     })
 }
 
@@ -193,5 +210,54 @@ mod tests {
         assert!(skipped_apps.iter().all(|a| *a == "Xcode"));
         assert!(report.skipped_running.iter().any(|(id, _)| id == "xcode-derived"));
         assert!(report.skipped_running.iter().any(|(id, _)| id == "xcode-archives"));
+    }
+    #[test]
+    fn a_failing_category_is_reported_and_others_still_scan() {
+        use crate::commands::clean::process::test_support::MockChecker;
+        use crate::commands::clean::types::{ExecAction, ExecReport};
+        use std::path::PathBuf;
+
+        struct Fixed(&'static str, Option<&'static str>);
+        impl CleanProvider for Fixed {
+            fn id(&self) -> &'static str {
+                self.0
+            }
+            fn label(&self) -> &'static str {
+                self.0
+            }
+            fn risk(&self) -> RiskLevel {
+                RiskLevel::Safe
+            }
+            fn discover(&self) -> Result<Vec<CleanItem>> {
+                match self.1 {
+                    Some(err) => Err(anyhow::anyhow!(err)),
+                    None => Ok(vec![CleanItem {
+                        category_id: self.0.into(),
+                        category_label: self.0.into(),
+                        path: PathBuf::from("/tmp/x"),
+                        size: 1,
+                        risk: RiskLevel::Safe,
+                    }]),
+                }
+            }
+            fn execute(&self, _: &[CleanItem], _: ExecAction) -> Result<ExecReport> {
+                Ok(ExecReport::default())
+            }
+        }
+
+        let providers: Vec<Box<dyn CleanProvider>> = vec![
+            Box::new(Fixed("broken", Some("cannot read /x: permission denied"))),
+            Box::new(Fixed("fine", None)),
+        ];
+        let report = discover_providers(providers, &MockChecker::none()).unwrap();
+        let ids: Vec<&str> = report.groups.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids, vec!["fine"]);
+        assert_eq!(
+            report.failed,
+            vec![(
+                "broken".to_string(),
+                "cannot read /x: permission denied".to_string()
+            )]
+        );
     }
 }

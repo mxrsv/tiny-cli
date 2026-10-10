@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::{execute_per_item, is_idle, CleanProvider};
+use super::{execute_per_item, is_idle, read_root, CleanProvider};
 use crate::commands::clean::fs_safe::{dir_size_safe, is_dir_safe};
 use crate::commands::clean::runner::{CommandRunner, RealRunner};
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
@@ -66,7 +66,7 @@ impl CleanProvider for ScreenshotsOld {
             Some(d) => d,
             None => return Ok(Vec::new()),
         };
-        Ok(list_old_screenshots(&dir, self.idle_days))
+        list_old_screenshots(&dir, self.idle_days)
     }
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
         execute_per_item(items, action, ID)
@@ -91,11 +91,11 @@ fn expand_tilde(s: &str) -> String {
 
 /// Lists every file in `dir` whose name starts with a screenshot prefix
 /// AND whose mtime is older than `idle_days`. Non-recursive.
-pub fn list_old_screenshots(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
+pub fn list_old_screenshots(dir: &Path, idle_days: u64) -> Result<Vec<CleanItem>> {
     let mut out = Vec::new();
-    let entries = match std::fs::read_dir(dir) {
-        Ok(it) => it,
-        Err(_) => return out,
+    let entries = match read_root(dir)? {
+        Some(it) => it,
+        None => return Ok(out),
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -125,7 +125,7 @@ pub fn list_old_screenshots(dir: &Path, idle_days: u64) -> Vec<CleanItem> {
             risk: RiskLevel::Review,
         });
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -184,7 +184,7 @@ mod tests {
         fs::write(&other, b"c").unwrap();
         backdate(&ss_old, 60);
         backdate(&other, 60); // old but wrong prefix → must skip
-        let found = list_old_screenshots(&dir, 30);
+        let found = list_old_screenshots(&dir, 30).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, ss_old);
         let _ = fs::remove_dir_all(&dir);

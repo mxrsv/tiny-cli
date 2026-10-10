@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
-use super::CleanProvider;
+use super::{read_root, CleanProvider};
 use crate::commands::clean::fs_safe::dir_size_safe;
 use crate::commands::clean::types::{CleanItem, ExecAction, ExecReport, RiskLevel};
 
@@ -27,7 +27,8 @@ impl CleanProvider for TrashProvider {
             None => return Ok(Vec::new()),
         };
         let root = h.join(".Trash");
-        if !root.exists() {
+        // An unreadable Trash (no Full Disk Access) must not report 0 B.
+        if read_root(&root)?.is_none() {
             return Ok(Vec::new());
         }
         let size = dir_size_safe(&root);

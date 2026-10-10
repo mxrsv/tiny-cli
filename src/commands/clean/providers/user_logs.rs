@@ -27,7 +27,7 @@ impl CleanProvider for UserLogs {
             None => return Ok(Vec::new()),
         };
         let root = home.join("Library/Logs");
-        Ok(top_level_entries(&root, ID, LABEL, RiskLevel::Safe))
+        top_level_entries(&root, ID, LABEL, RiskLevel::Safe)
     }
 
     fn execute(&self, items: &[CleanItem], action: ExecAction) -> Result<ExecReport> {
@@ -60,7 +60,8 @@ mod tests {
             ID,
             LABEL,
             RiskLevel::Safe,
-        );
+        )
+        .unwrap();
         assert!(items.is_empty());
     }
 }
