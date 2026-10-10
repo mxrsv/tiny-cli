@@ -1,0 +1,16 @@
+@import "../styles/tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { overflow-x: clip; }
+body {
+  margin: 0;
+  display: flow-root; /* keeps the header's top margin inside body, so /#top lands on scrollY 0 */
+  min-height: 100vh;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(40% 50% at 12% 30%, rgba(145, 174, 201, 0.45), transparent 70%),
+    radial-gradient(45% 55% at 90% 65%, rgba(145, 174, 201, 0.5), transparent 70%),
+    var(--canvas);
+}
+h1, h2, h3, h4, p { margin: 0; text-wrap: balance; }

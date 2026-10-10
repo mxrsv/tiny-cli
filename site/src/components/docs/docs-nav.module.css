@@ -1,0 +1,27 @@
+.nav { position: sticky; top: 96px; }
+.title { color: var(--ink-2); margin-bottom: 8px; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.list a {
+  display: block;
+  padding: 6px 12px;
+  margin-left: -12px;
+  border-radius: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  transition: background-color var(--quick) var(--ease);
+}
+.list a:hover { background: rgba(145, 174, 201, 0.28); }
+.list a:focus-visible { outline: 3px solid var(--primary-deep); outline-offset: 2px; }
+
+@media (max-width: 1068px) {
+  .nav {
+    position: static;
+    padding: 16px 20px;
+    border-radius: 20px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-shadow);
+  }
+  .list { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .list a { margin-left: 0; }
+}

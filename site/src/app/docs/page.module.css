@@ -1,0 +1,8 @@
+.intro > * + * { margin-top: 16px; }
+.eyebrow { color: var(--primary-deep); }
+.lead { color: var(--ink-2); }
+.status { padding: 16px 20px; border-radius: 20px; margin-top: 24px; }
+
+@media (max-width: 734px) {
+  .status { padding: 14px 16px; }
+}

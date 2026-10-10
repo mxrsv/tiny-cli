@@ -1,0 +1,65 @@
+/* Default layout: the static sequence (phones, tablets, reduced motion).
+   The pinned MacBook layout replaces it under the query at the bottom, which
+   must match PIN_QUERY in steps.ts. */
+.stage { --rise: 12px; position: relative; padding: 8px 0 48px; }
+.pinned { display: none; }
+
+.sequence { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: 48px; max-width: 760px; }
+.item { display: grid; gap: 6px; }
+.itemCaption { color: var(--ink-2); margin-bottom: 10px; }
+.tag {
+  display: inline-block; margin-left: 10px; padding: 1px 9px; border-radius: 980px; vertical-align: middle;
+  background: rgba(145, 174, 201, 0.35); color: var(--ink);
+}
+
+/* A picture cropped to the app window. AppScreen scales itself from this inline-size container and reads --crop-*. */
+.crop {
+  --crop-x: 150; --crop-y: 78; --crop-w: 1140; --crop-h: 740;
+  position: relative; container-type: inline-size; overflow: hidden; border-radius: 8px;
+  aspect-ratio: calc(var(--crop-w) / var(--crop-h));
+  box-shadow: var(--glass-shadow);
+}
+
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 760px; margin: 48px auto 0; }
+
+@media (max-width: 734px) {
+  .crop { --crop-x: 380; --crop-w: 910; }
+  .tiles { grid-template-columns: 1fr 1fr; margin-top: 32px; }
+  .tiles > :last-child { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1069px) and (prefers-reduced-motion: no-preference) {
+  .stage { --indicator-h: 120px; padding: 24px 9% 0; }
+  .sequence { display: none; }
+
+  .pinned { display: block; }
+  /* 290px = header offset + stage padding + step labels. The labels span the stage, so a short window can
+     shrink the device without making them wrap taller; the 400px floor fits windows down to about 560px tall. */
+  .device { width: 100%; max-width: clamp(400px, calc((100svh - 290px) * 1.45), 980px); margin-inline: auto; }
+
+  /* Display layers: the current step is shown, earlier ones leave upward,
+     later ones wait below. Opacity and a short rise on the shared curve. */
+  .layer {
+    position: absolute; inset: 0; opacity: 0; visibility: hidden;
+    transition: opacity var(--base) var(--ease), transform var(--base) var(--ease), visibility 0s linear var(--base);
+  }
+  .layer[data-pos="next"] { transform: translateY(var(--rise)); }
+  .layer[data-pos="past"] { transform: translateY(calc(var(--rise) * -1)); }
+  .layer[data-pos="now"] { opacity: 1; visibility: visible; transition-delay: 0s; }
+
+  .steps { list-style: none; max-width: 980px; margin: 28px auto 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .step {
+    padding-top: 12px; border-top: 2px solid var(--hairline); color: var(--ink-2);
+    transition: border-color var(--base) var(--ease), color var(--base) var(--ease);
+  }
+  .step[aria-current="step"] { border-top-color: var(--primary-deep); color: var(--ink); }
+
+  /* Orbit overlay: tiles float around the device, above the step labels. */
+  .tiles { position: absolute; inset: 0 0 var(--indicator-h) 0; display: block; max-width: none; margin: 0; pointer-events: none; }
+  .tiles > * { pointer-events: auto; transition: transform var(--base) var(--ease); }
+
+  /* The tile that belongs to the playing step keeps full size; the others settle to the bottom of the scale range. */
+  .stage[data-step="processes"] .tiles > :not([data-tile="mem"]),
+  .stage[data-step="scan"] .tiles > :not([data-tile="disk"]),
+  .stage[data-step="clean"] .tiles > :not([data-tile="trash"]) { transform: scale(0.96); }
+}
