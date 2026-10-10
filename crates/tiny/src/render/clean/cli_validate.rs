@@ -1,7 +1,7 @@
 //! Pre-execution validation of CLI flag combinations.
 //!
-//! The matrix is documented in `.planning/tiny-clean.md`. We refuse early so
-//! the user gets a clear error before discovery runs.
+//! The matrix is documented in `docs/plans/2026-04-30-tiny-clean.md`. We
+//! refuse early so the user gets a clear error before discovery runs.
 
 use anyhow::{anyhow, Result};
 
