@@ -41,6 +41,7 @@ crates/
 ├─ tiny/src/                 # cli.rs (clap) + render/<command>; tests/ smoke
 └─ tiny-ffi/src/             # UniFFI records and calls for Swift
 macos/Sources/               # Tiny (SwiftUI views and state), TinyEngine (engine actor)
+macos/Resources/             # AppIcon.icns, copied into the bundle by build-native-app.sh
 scripts/                     # bridge, native checks, app bundle
 docs/                        # user/, internals/, operations/, specs/, plans/
 ```
