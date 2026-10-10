@@ -1,9 +1,20 @@
 # Desktop app
 
 Tiny Dev is the native Mac app. Its dock switches between two screens: **Activity** (Apps &
-activity) and **Clean**. It needs macOS 14 or later; build and open it as described in the
-[README](../../README.md#desktop-app). Everything stays on your Mac, and every action asks
-first.
+activity) and **Clean**. Everything stays on your Mac, and every action asks first.
+
+## Build
+
+You need macOS 14 or later, Swift 6, the Xcode Command Line Tools and Rust 1.91 or newer; the
+app is built and tested on Apple Silicon. From a clone of the repository:
+
+```bash
+scripts/build-native-app.sh
+open "macos/.build/Tiny Dev.app"
+```
+
+The script builds and signs `Tiny Dev.app` for this Mac without installing it; copy it into
+`/Applications` to keep it.
 
 ## Apps & activity
 

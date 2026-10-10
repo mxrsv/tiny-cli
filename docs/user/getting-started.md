@@ -23,15 +23,7 @@ ask you to allow your terminal to control Finder.
 
 ## Commands
 
-| Command          | What it does                                                           |
-| ---------------- | ---------------------------------------------------------------------- |
-| `tiny sys`       | OS, host, uptime, CPU, memory and per-disk usage                       |
-| `tiny scan`      | Large and old files in your folders, never deletes — see [scan](scan.md) |
-| `tiny clean`     | Interactive cleanup of caches and leftovers — see [clean](clean.md)    |
-| `tiny uninstall` | Remove an app and its `~/Library` data — see [uninstall](uninstall.md) |
-| `tiny processes` | List, inspect and quit your processes — see [processes](processes.md)  |
-| `tiny focus`     | A focus timer that logs finished sessions                              |
-
+The [command table](../../README.md#commands) links each command to its guide.
 `tiny --help` and `tiny <command> --help` list every flag.
 
 ## `sys` — system information

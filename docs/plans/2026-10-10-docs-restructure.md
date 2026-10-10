@@ -61,6 +61,8 @@ Out of scope: the Theme accent and Lottie in `f18de6e`, CI changes, stale
   PASS. After B6: `docs-anchors.sh` exit 0 and `docs-compliance.sh` pass on both
   checkouts; 187 relative links in living docs and active records, 0 broken; stale-token
   grep empty.
+- 2026-10-10: install, app build and command table each have one home (getting-started,
+  desktop page, README); README 290 → 40 lines.
 
 ## Handoff
 

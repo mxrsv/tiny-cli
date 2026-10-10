@@ -6,26 +6,10 @@ anything, and keep everything on your machine.
 
 ## Build & Run
 
-Requirements: macOS and Rust 1.91 or newer (`rustup`). The desktop app also needs macOS 14
-or later, Swift 6 and the Xcode Command Line Tools; it is built and tested on Apple Silicon.
-
-### CLI
-
-```bash
-cargo build -p tiny
-cargo run -p tiny -- --help
-cargo install --path crates/tiny     # put `tiny` on your PATH
-```
-
-### Desktop app
-
-```bash
-scripts/build-native-app.sh
-open "macos/.build/Tiny Dev.app"
-```
-
-The script builds and signs `Tiny Dev.app` for this Mac without installing it; copy it into
-`/Applications` to keep it.
+- **CLI:** install from source as in [Getting started](docs/user/getting-started.md#install).
+- **Desktop app:** build `Tiny Dev.app` as in [Desktop app](docs/user/desktop.md#build).
+- **Contributors:** gates and native checks are in
+  [Development](docs/operations/development.md).
 
 ## Commands
 
