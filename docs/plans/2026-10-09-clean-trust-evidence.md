@@ -1,8 +1,10 @@
 # Plan: Clean trust — selection rules and per-path evidence
 
 **Spec**: [2026-10-09-clean-trust-evidence](../specs/2026-10-09-clean-trust-evidence.md) |
-**Checkout**: `~/.codex/worktrees/tiny-pr-1/tiny-cli`, branch `feat/native-desktop` |
-**Status**: approved 2026-10-09; T5 unblocked and T8–T10 added 2026-10-10
+**Checkout**: `~/Documents/Development/Personal/tiny-cli-worktrees/clean-trust`, branch
+`feat/clean-trust` (T0 landed on `feat/native-desktop`) |
+**Status**: approved 2026-10-09; T0–T6 and T8–T10 done; T7 waits on AC4 approval with the
+clean categories layout; AC3 and other open items in Handoff
 
 ## Tasks
 
@@ -34,7 +36,7 @@ One commit per task; T1 lands before T2–T6 use it.
   E = T6 (`CleanView`, `CleanReviewSheet`, `CleanCopy`, `CleanState`, `CleanTests`).
 - **Wave 2, serial:** merge A/B/C/E into `feat/clean-trust`, full gate, T7 real-data
   scan. T5 joins once the simulator decision is made. Merging into `feat/native-desktop`
-  needs the user's go-ahead: another session edits that checkout.
+  needs the user's go-ahead (see Handoff).
 
 ## Progress
 
@@ -94,5 +96,6 @@ One commit per task; T1 lands before T2–T6 use it.
   which AC3 ("at least one fact") does not yet cover.
 - Unchecked: `simulator-devices` against a real `xcrun simctl` (this Mac has no Xcode).
 - AC4 pending: approved in one round with the layout from the
-  [clean categories spec](../specs/2026-10-10-clean-categories.md). Merge into `feat/native-desktop` needs the
-  user's go-ahead; another session has uncommitted Clean UI changes there.
+  [clean categories spec](../specs/2026-10-10-clean-categories.md). Merging with `feat/native-desktop` needs the
+  user's go-ahead; that branch has Clean UI commit `f18de6e` (Theme accent, Lottie), which
+  `feat/clean-trust` lacks.

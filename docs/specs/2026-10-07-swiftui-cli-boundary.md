@@ -1,7 +1,8 @@
 # SwiftUI app and shared Rust core boundary
 
-Status: Read-only app overview with system widgets and app groups implemented and running locally; user visual acceptance pending. Actions X1–X4 approved 2026-10-08 (O1 = Swift app quit, O2 = `--port`) and implemented on `feat/native-desktop`; user acceptance pending.
+Status: Read-only app overview with system widgets and app groups implemented and running locally; user visual acceptance pending. Actions X1–X4 approved 2026-10-08 (O1 = Swift app quit, O2 = `--port`) and implemented on `feat/native-desktop`; work continues on `feat/clean-trust`; user acceptance pending.
 Started: 2026-10-07
+Plan: [2026-10-06-processes-clean-mvp](../plans/2026-10-06-processes-clean-mvp.md)
 
 ## Goal and approved decisions
 
@@ -200,11 +201,12 @@ silently omitted.
   UI must require rediscovery/review and never automatically replay actions.
 - Process actions revalidate PID/start time and ownership immediately before
   signaling and report permission denial, an already-exited target, and a target
-  still running after the signal as distinct outcomes. Cleanup retains the PRD's
-  Trash-only desktop policy, provider/path safety checks, and per-item reporting
-  (moved, failed, skipped with reason, not attempted); no permanent-delete or
-  quarantine fallback. Per-item revalidation and cancellation checks happen in
-  the core immediately before each item, not once per batch. Desktop execution
+  still running after the signal as distinct outcomes. Cleanup retains the
+  [MVP spec](2026-10-06-processes-clean-mvp.md)'s Trash-only desktop policy (PC-C3),
+  provider/path safety checks, and per-item reporting (moved, failed, skipped
+  with reason, not attempted); no permanent-delete or quarantine fallback.
+  Per-item revalidation and cancellation checks happen in the core immediately
+  before each item, not once per batch. Desktop execution
   only moves individually listed paths to Trash; providers whose cleanup is a
   tool command rather than a per-path move (for example `docker system prune`)
   are report-only on the desktop.
@@ -257,7 +259,7 @@ Xcode/SwiftPM build integration, aborts, cancellation, and FDA attribution.
   and confirmation flows.
 - **B5:** Given temporary process/file fixtures, when executing CLI and native
   flows, then identity changes, symlinks, stale previews, denied access, Trash
-  failures, and partial outcomes retain the PRD's safety invariants.
+  failures, and partial outcomes retain the MVP spec's safety invariants.
 - **B6:** Given the sample-only prototype, when users exercise its controls,
   then no real process/file action or permission change occurs, and the user
   selects/accepts the layout before production integration.

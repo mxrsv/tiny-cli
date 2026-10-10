@@ -26,7 +26,7 @@ layer is sound (re-check, fingerprints, overlap merge, protected paths), but sev
   `tiny-cli/target` was flagged one day after its last commit.
 
 The first three, plus Finder dotfiles in Downloads, are fixed on `feat/native-desktop`
-(uncommitted at the time of writing). This spec covers the rest.
+(`c5e313b`). This spec covers the rest.
 
 **Goal**: a user looking at any offered path can see *why* it is offered and *how it comes
 back*, and nothing is offered on a rule that is known to misfire.
@@ -115,7 +115,8 @@ scratchpad, not the repo).
 - **UI2.** Each review row shows its evidence under the path; a sensitive row shows a
   warning and is excluded from category select-all.
 - **UI3.** Each tile shows its "how it comes back" line.
-- **UI4.** Existing guarantees stay: review items are never pre-selected (PC-C3), the
+- **UI4.** Existing guarantees stay: review items are never pre-selected
+  ([PC-C3](2026-10-06-processes-clean-mvp.md#clean-acceptance-criteria)), the
   confirmation names the Trash and Put Back, the report lists skipped items with reasons.
 
 ## 4. Acceptance criteria
@@ -139,7 +140,6 @@ scratchpad, not the repo).
 
 ## 6. Resolved decision
 
-- **Simulator device removal on the desktop** (resolved 2026-10-10, see §2a and SR5). Removing a device correctly is
-  `xcrun simctl delete <udid>`, a permanent tool command, not a move to Trash. Desktop
-  policy keeps tool commands report-only (like Docker). Proposed: split devices into their
-  own category, report-only on the desktop with the `simctl` command shown; the CLI runs it.
+- **Simulator device removal on the desktop**: resolved 2026-10-10 in
+  [§2a](#2a-user-decisions-2026-10-10) and SR5; showing the `simctl` command on the
+  desktop stays deferred.

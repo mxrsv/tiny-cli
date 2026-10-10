@@ -33,8 +33,8 @@ critique; raw research kept in the session scratchpad) produced the requirements
   - **B** — families as the outer sections, trust as a badge on each tile (changes UI1).
   - **C** — summary cards per family that open a family's tiles (the deferred Smart Scan
     epic).
-  - No sidebar: rejected on 2026-10-07 in the SwiftUI boundary spec on `main`
-    (`docs/specs/2026-10-07-swiftui-cli-boundary.md`).
+  - No sidebar: rejected on 2026-10-07 in the
+    [SwiftUI boundary spec](2026-10-07-swiftui-cli-boundary.md#native-demo).
 - **Safety first**: SR4–SR7 of the clean trust spec land before any category is split out of
   `user-caches`.
 - **AC4 of the clean trust spec** is approved in the same round as this layout.

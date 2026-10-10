@@ -2,7 +2,8 @@
 
 Record: Active task plan
 Started: 2026-10-06
-Documentation checkout: `/Users/kyantran/Documents/Development/Personal/tiny-cli` (`main`)
+Spec: [MVP](../specs/2026-10-06-processes-clean-mvp.md); [SwiftUI/CLI boundary](../specs/2026-10-07-swiftui-cli-boundary.md)
+Documentation checkout: `/Users/kyantran/Documents/Development/Personal/tiny-cli-worktrees/clean-trust` (`feat/clean-trust`; `main` until 2026-10-10)
 Implementation checkout: `/Users/kyantran/.codex/worktrees/tiny-pr-1/tiny-cli`, branch `feat/native-desktop` created on 2026-10-07 from PR #1 commit `fb07b4441b261543754ba2f4f4099a69a5f39e0d`; work continues on `feat/clean-trust` (`/Users/kyantran/Documents/Development/Personal/tiny-cli-worktrees/clean-trust`) since 2026-10-09
 
 ## Requirements reference and delivery scope
@@ -896,6 +897,12 @@ native run; T3a folds it into the first lock update and commits it. No core extr
 
 
 ## Handoff
+
+2026-10-10: code continues on `feat/clean-trust` (header), which merged `main` in
+`af772d3`; Clean screen work is tracked in the
+[clean trust plan](2026-10-09-clean-trust-evidence.md) and the
+[clean categories plan](2026-10-10-clean-categories.md). The `app-orphans` follow-up
+below is decided: report-only (`8b4842a` on `main`, `8463af1` on `feat/clean-trust`).
 
 As of 2026-10-09:
 - Current app overview A1–A4 implemented, verified, installed and launched.

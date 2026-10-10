@@ -40,15 +40,12 @@ C1 lands before C2–C6. C8–C9 follow C7.
   the space is without changing UI1); then C0 and C1.
 - **Waiting on the user**:
   - AC4 approval, in one round with the clean trust AC4 (C7).
-  - Go-ahead to merge `feat/clean-trust` into `feat/native-desktop`; that checkout
-    (`~/.codex/worktrees/tiny-pr-1/tiny-cli`) has another session's uncommitted Clean UI
-    changes.
+  - Go-ahead to merge `feat/clean-trust` into `feat/native-desktop`; that branch has Clean
+    UI commit `f18de6e` (Theme accent, Lottie), which `feat/clean-trust` lacks.
   - Full Disk Access for `com.mxrsv.tiny.dev`, to learn whether Mail, Chat and Browser show
     "at least Zero KB" only for lack of access.
-- **Uncommitted on `main`**: `docs/user/clean.md` documents `docker-volumes` and the
-  report-only `app-orphans`, but the file belongs to another session's uncommitted docs
-  restructure (`docs/`, `AGENTS.md`, `README.md`, `src/commands/clean/cli_validate.rs`
-  comment, staged `.planning/` rename), so it was not committed.
+- **Docs on `main`**: `docs/user/clean.md` documents `docker-volumes` and the report-only
+  `app-orphans`, committed in `1ab8535`.
 - **Known issues, not in scope, need a go-ahead**:
   - `main` `src/commands/clean/providers/user_caches.rs` still gates by the last name
     segment (`Google` is offered while Chrome runs); the fix exists only on
