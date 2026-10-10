@@ -10,11 +10,12 @@ tiny clean --include-review             # also list categories worth a look firs
 tiny clean --include-destructive        # also list Trash and Time Machine snapshots
 tiny clean --review-paths               # untick individual paths before acting
 tiny clean --category node-modules      # only this category (repeatable)
-tiny clean --category trash --hard      # the only way to empty the Trash
+tiny clean --category trash --hard      # empty the Trash (Hard delete preselected)
 ```
 
-Run `--dry-run` first on a new machine. Your personal files never appear here; use
-[`tiny scan`](scan.md) for those.
+Run `--dry-run` first on a new machine. Personal files appear only in the Review categories
+`downloads-old`, `screenshots-old` and `mail-attachments`; use [`tiny scan`](scan.md) for
+the rest.
 
 ## Categories
 
