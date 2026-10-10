@@ -45,4 +45,5 @@ There is no release runbook: tiny has no tags, CI or published artifacts yet.
 - [`../README.md`](../README.md) — the project front page.
 - [`../AGENTS.md`](../AGENTS.md) — repository rules for contributors and agents.
 - [`../_bmad-output/planning-artifacts/`](../_bmad-output/planning-artifacts/) — PRD,
-  architecture and epics for the desktop migration, owned by the BMad workflow.
+  architecture and epics for the desktop migration; read-only history from the removed
+  BMad workflow. New requirements go in [`specs/`](specs/).

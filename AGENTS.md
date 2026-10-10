@@ -34,7 +34,7 @@ tests/clean_smoke.rs         # assert_cmd end-to-end checks, disk-independent
 docs/
 ├─ user/, internals/, operations/   # living docs by reader; index in docs/README.md
 └─ specs/, plans/                    # requirements / execution records (D0/D4)
-_bmad-output/                # BMad planning artifacts for the desktop migration
+_bmad-output/                # historical BMad artifacts (PRD, epics); read-only
 ```
 
 Locations that differ from `~/.claude/templates/project-structure.md`:
@@ -43,8 +43,9 @@ Locations that differ from `~/.claude/templates/project-structure.md`:
   module layout above.
 - Unit tests → inline `#[cfg(test)] mod tests` in the file under test;
   integration tests → `tests/`.
-- Desktop product docs (PRD, architecture, epics) → `_bmad-output/planning-artifacts/`,
-  owned by the BMad workflow.
+- Desktop PRD, architecture and epics stay in `_bmad-output/planning-artifacts/` as
+  read-only history; the BMad workflow was removed on 2026-10-10. New requirements go
+  in `docs/specs/`.
 
 ## Documentation
 
