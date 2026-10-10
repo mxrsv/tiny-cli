@@ -5,7 +5,16 @@
 macOS-focused Rust CLI (binary `tiny`) for system info, read-only file scans,
 cache cleanup, a focus timer and app uninstalls. Stack: Rust 2021 single binary
 crate, `clap` 4.5, `anyhow`, `serde`, `sysinfo` 0.32, `dialoguer` 0.11; tests
-use `assert_cmd` + `predicates`. Usage lives in [README.md](README.md).
+use `assert_cmd` + `predicates`. Usage lives in [docs/user/](docs/user/); the
+documentation index is [docs/README.md](docs/README.md).
+
+## Branches and worktrees
+
+- `main` holds this single-crate CLI. The Rust workspace and the SwiftUI desktop app live on
+  `feat/clean-trust` (worktree `../tiny-cli-worktrees/clean-trust`), whose `AGENTS.md` and
+  docs describe that layout. Until it lands, edit shared docs there; `main` takes only doc
+  fixes for its own code and is merged into that branch, never cherry-picked.
+- Branches live in worktrees at `../tiny-cli-worktrees/<slug>`.
 
 ## Common commands
 
@@ -16,6 +25,9 @@ use `assert_cmd` + `predicates`. Usage lives in [README.md](README.md).
 | `cargo clippy --all-targets -- -D warnings`  | lint gate                               |
 | `cargo run -- --help`                        | CLI help                                |
 | `cargo run -- clean --dry-run`               | safe manual check of the cleanup plan   |
+
+There is no CI on `main`. What a green run does and does not prove is in
+[development](docs/operations/development.md#what-a-green-run-proves).
 
 ## Directory structure
 
@@ -45,35 +57,23 @@ Locations that differ from `~/.claude/templates/project-structure.md`:
 
 ## Documentation
 
-Most code changes need no documentation change; agents and maintainers can read the code.
-The index is [docs/README.md](docs/README.md).
-
-- Before changing UI, read the [design language](docs/DESIGN-LANGUAGE.md). Preserve its
-  approved primary colour; layout, information arrangement and icon treatments remain
-  flexible as described there.
-
-- `docs/internals/` holds architectural decisions and their reasons, constraints that span
-  modules, and traps hard to discover from the source. Before adding a paragraph, ask what a
-  maintainer would get wrong without it.
-- `docs/user/` helps users accomplish tasks, one page per command family, in the voice of the
-  shipped CLI, with no implementation detail. Update it when a flag or behaviour changes; the
-  root README keeps only the command table and links.
-- `docs/operations/` is the maintainer runbook. There is no release page until tiny has a
-  release process. Every page under `internals/` and `operations/` opens with the
-  "For maintainers" callout.
-- Do not write file catalogs, field or method enumerations, control-flow narration, or
-  appended PR summaries. When a documented decision changes, rewrite or remove the text.
-- Specs in `docs/specs/` own requirements and acceptance criteria. Plans in `docs/plans/`
-  link to specs and own technical tasks, progress, verification and handoff (D0/D4).
-  Retain completed records as history. Small work needs neither document. Reviews stay
-  in chat or an explicitly requested PR; raw research artifacts stay in scratchpad.
+- Read the [design language](docs/DESIGN-LANGUAGE.md) before changing UI; keep its approved
+  primary colour.
+- `docs/user/` has one page per command family, in the voice of the shipped CLI;
+  `README.md` keeps only the command table and links.
+- `docs/internals/` holds decisions, cross-module constraints and traps; every page under
+  `internals/` and `operations/` opens with the "For maintainers" callout. The
+  [glossary](docs/internals/glossary.md) owns the vocabulary: use its terms in code and docs.
+- No file catalogs, control-flow narration or appended PR summaries. There is no release
+  page until tiny has a release process.
 
 ## Repo-specific rules (R-rules — only the delta from the global standard)
 
 - **R1.** A new cleanup category implements `CleanProvider` and is registered in
   all three of `all_providers`, `known_category_ids` and `category_family` in
   [providers/mod.rs](src/commands/clean/providers/mod.rs). `category_family`
-  panics on an unknown id.
+  panics on an unknown id. See
+  [the provider registry](docs/internals/clean.md#the-provider-registry).
 - **R2.** In `clean`, every metadata read uses `symlink_metadata` and every delete
   goes through [fs_safe.rs](src/commands/clean/fs_safe.rs)
   (`remove_recursive_safe`) or [`move_to_trash`](src/commands/clean/providers/mod.rs); never call `fs::remove_*` or
@@ -81,20 +81,20 @@ The index is [docs/README.md](docs/README.md).
 - **R3.** Keep `ExecAction::{Trash, HardDelete, EmptyTrash}` distinct from the
   menu-level `CleanAction` in [types.rs](src/commands/clean/types.rs).
   [`map_action`](src/commands/clean/execute.rs) maps menu Hard delete to
-  `EmptyTrash` for the `trash` provider, which rejects every other action.
+  `EmptyTrash` for the `trash` provider, which rejects every other action. See
+  [mapping actions](docs/internals/clean.md#mapping-actions).
 - **R4.** Honour `requires_app_quit()`: discovery skips a category whose owning
   app is running. Do not bypass it to "clean more".
-- **R5.** `scan` stays strictly read-only, and personal files never appear in
-  `clean`.
+- **R5.** `scan` stays strictly read-only. In `clean`, personal files appear only in the
+  Review-risk categories `downloads-old`, `screenshots-old` and `mail-attachments`.
 - **R6.** Tests and manual runs never delete real user data: use `--dry-run`, or
   temp directories created by the test. `--hard -y` with `TINY_CONFIRM_HARD=1`
   is a real permanent delete.
 
 ## Known traps
 
-Read [docs/internals/traps.md](docs/internals/traps.md) before touching deletion code or
-resuming desktop work. The desktop app is not on `main`: inspect branch
-`feat/clean-trust` (worktree `../tiny-cli-worktrees/clean-trust`) first.
+Read [docs/internals/traps.md](docs/internals/traps.md) before touching deletion code. For
+desktop work, switch to the `feat/clean-trust` worktree first.
 
 ## Language
 
