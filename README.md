@@ -28,8 +28,9 @@ cargo install --path .     # put `tiny` on your PATH
 | `tiny uninstall` | Remove apps and their `~/Library` leftovers (macOS)              | [Uninstalling apps](docs/user/uninstall.md) |
 | `tiny focus`     | Focus timer that logs finished sessions                          | [Getting started](docs/user/getting-started.md#focus--focus-timer) |
 
-`clean` and `uninstall` always show a plan first and default to Move to Trash.
-Permanent deletion needs `--hard` or an explicit menu choice plus a confirmation.
+`clean` and `uninstall` always show a plan first, default to Move to Trash and confirm Hard
+delete; only `-y --hard` skips that confirmation, and `clean` then also needs
+`TINY_CONFIRM_HARD=1`.
 
 ## Documentation
 

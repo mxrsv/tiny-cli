@@ -43,8 +43,9 @@ confirmation at all** — unlike `tiny clean`, no environment variable is requir
 
 - Apple's own apps, recognised by a `com.apple.` bundle identifier, or by name when the
   identifier cannot be read.
-- Apps installed as Homebrew casks: use `brew uninstall --cask <name>`, or pass `--force` to
-  remove them with tiny anyway.
+- Apps installed as Homebrew casks under `/opt/homebrew/Caskroom` whose cask name is the app
+  name in lowercase with hyphens: use `brew uninstall --cask <name>`, or pass `--force` to
+  remove them with tiny anyway. Other casks are not recognised.
 
 If any selected app is refused, tiny stops after the report and removes nothing.
 
