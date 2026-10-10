@@ -1,7 +1,7 @@
 # tiny-cli documentation
 
-Three tiers, split by reader. Every page describes the shipped `tiny` CLI on `main` in the
-present tense; the planned native desktop app says so wherever it appears.
+Three tiers, split by reader. Every page describes the `tiny` CLI and the Tiny desktop app on
+this branch in the present tense.
 
 ## `user/` — using tiny
 
@@ -10,16 +10,19 @@ present tense; the planned native desktop app says so wherever it appears.
 - [Scanning files](user/scan.md) — the read-only report, custom roots, `.tinyignore`,
   duplicates and JSON output.
 - [Cleaning caches](user/clean.md) — categories and risk, the picker and action menu, the
-  flags, the safety model.
+  flags, your own files, the safety model.
 - [Uninstalling apps](user/uninstall.md) — what is removed, the action menu, what is refused.
+- [Processes](user/processes.md) — the list, ports, and quitting a process.
+- [Desktop app](user/desktop.md) — Apps & activity, Clean, and what happens if Tiny stops
+  mid-action.
 
 ## `internals/` — how tiny is built
 
-- [Overview](internals/overview.md) — the binary's shape, how a command is wired, how deletion
-  works, where the desktop migration stands.
-- [Glossary](internals/glossary.md) — the words the code and docs use.
-- [Clean pipeline](internals/clean.md) — validation, provider selection, discovery, the
-  action mapping, the test seams.
+- [Overview](internals/overview.md) — the workspace and the desktop app, how a command is
+  wired, read-only versus destructive.
+- [Glossary](internals/glossary.md) — the words the code, docs and UI use.
+- [Clean pipeline](internals/clean.md) — validation, providers, discovery, action mapping,
+  the desktop's Trash path, test seams.
 - [Known traps](internals/traps.md) — what is not obvious from reading one file.
 
 ## `operations/` — building and checking
@@ -27,7 +30,8 @@ present tense; the planned native desktop app says so wherever it appears.
 - [Development](operations/development.md) — toolchain, commands, tests, what a green run
   proves.
 
-There is no release runbook: tiny has no tags, CI or published artifacts yet.
+There is no release runbook: tiny has no tags or published artifacts yet. CI runs the
+`cargo` gates only.
 
 ## Design language
 

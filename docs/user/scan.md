@@ -26,7 +26,9 @@ default), `age` (oldest first) or `path`.
 ## Which folders
 
 By default the three folders above, skipping any that do not exist. Each `--path` replaces
-that set; relative paths are resolved from the current directory.
+that set; relative paths are resolved from the current directory. A folder whose path
+contains `..` or passes through a symbolic link (such as `/tmp` on macOS) is skipped without
+a message.
 
 tiny always skips version-control folders, build and package output (`node_modules`,
 `target`, `dist`, `.venv` and similar), macOS metadata folders, and anything deeper than 12
@@ -37,13 +39,15 @@ levels.
 Put a `.tinyignore` in a scanned folder or in your home folder to skip more:
 
 ```
-# comment
-Archive        # any folder named Archive
-*.iso          # any file with this extension
+# any folder named Archive
+Archive
+# any file with this extension (case-sensitive)
+*.iso
 ```
 
-Only these two forms are understood; it is not a full `.gitignore`. Rules from every file
-found apply to the whole scan.
+Only these two forms are understood, one per line; a `#` starts a comment only at the
+beginning of a line. It is not a full `.gitignore`. Rules from every file found apply to the
+whole scan.
 
 ## JSON output
 

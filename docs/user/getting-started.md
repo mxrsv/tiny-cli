@@ -1,20 +1,21 @@
 # Getting started
 
 `tiny` is a small command-line tool for everyday upkeep of a Mac: what the machine is doing,
-which files are taking space, which caches can go, and which apps left data behind. Every
-command that can remove something shows you a plan first and defaults to Move to Trash.
+which files are taking space, which caches can go, which apps left data behind and which
+processes are running. Every command that can remove something shows you a plan first and
+defaults to Move to Trash. Processes and cache cleanup also have a [desktop app](desktop.md).
 
 ## Install
 
-tiny is built from source. You need a Rust toolchain (`rustup` installs one).
+tiny is built from source. You need Rust 1.91 or newer (`rustup` installs it).
 
 ```bash
 git clone https://github.com/mxrsv/tiny-cli
 cd tiny-cli
-cargo install --path .     # puts `tiny` on your PATH (~/.cargo/bin)
+cargo install --path crates/tiny     # puts `tiny` on your PATH (~/.cargo/bin)
 ```
 
-To try it without installing, replace `tiny` with `cargo run --` in every example.
+To try it without installing, replace `tiny` with `cargo run -p tiny --` in every example.
 
 `sys`, `scan` and `focus` only read your system or write their own log. `clean` and
 `uninstall` move things to the Trash through Finder, so they need macOS; the first run may
@@ -22,13 +23,14 @@ ask you to allow your terminal to control Finder.
 
 ## Commands
 
-| Command          | What it does                                                    |
-| ---------------- | --------------------------------------------------------------- |
-| `tiny sys`       | OS, host, uptime, CPU, memory and per-disk usage                |
+| Command          | What it does                                                           |
+| ---------------- | ---------------------------------------------------------------------- |
+| `tiny sys`       | OS, host, uptime, CPU, memory and per-disk usage                       |
 | `tiny scan`      | Large and old files in your folders, never deletes — see [scan](scan.md) |
-| `tiny clean`     | Interactive cleanup of caches and leftovers — see [clean](clean.md) |
+| `tiny clean`     | Interactive cleanup of caches and leftovers — see [clean](clean.md)    |
 | `tiny uninstall` | Remove an app and its `~/Library` data — see [uninstall](uninstall.md) |
-| `tiny focus`     | A focus timer that logs finished sessions                       |
+| `tiny processes` | List, inspect and quit your processes — see [processes](processes.md)  |
+| `tiny focus`     | A focus timer that logs finished sessions                              |
 
 `tiny --help` and `tiny <command> --help` list every flag.
 
