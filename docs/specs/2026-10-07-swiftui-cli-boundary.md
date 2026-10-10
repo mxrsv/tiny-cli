@@ -22,7 +22,7 @@ UniFFI after the spike recorded below. Later on 2026-10-07 the user deferred
 showing equivalent `tiny ...` commands in the GUI for the MVP: no command bar,
 copy action or command string is shown. The shared core keeps this addable later.
 
-The [PRD Product Scope](../../_bmad-output/planning-artifacts/prd.md#product-scope)
+The [MVP spec](2026-10-06-processes-clean-mvp.md)
 continues to own the product requirements and PC-P, PC-C, PC-D acceptance
 criteria. This spec owns only the native/Rust boundary. The existing
 [MVP plan](../plans/2026-10-06-processes-clean-mvp.md) owns execution.

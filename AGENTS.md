@@ -34,7 +34,6 @@ tests/clean_smoke.rs         # assert_cmd end-to-end checks, disk-independent
 docs/
 ├─ user/, internals/, operations/   # living docs by reader; index in docs/README.md
 └─ specs/, plans/                    # requirements / execution records (D0/D4)
-_bmad-output/                # historical BMad artifacts (PRD, epics); read-only
 ```
 
 Locations that differ from `~/.claude/templates/project-structure.md`:
@@ -43,9 +42,6 @@ Locations that differ from `~/.claude/templates/project-structure.md`:
   module layout above.
 - Unit tests → inline `#[cfg(test)] mod tests` in the file under test;
   integration tests → `tests/`.
-- Desktop PRD, architecture and epics stay in `_bmad-output/planning-artifacts/` as
-  read-only history; the BMad workflow was removed on 2026-10-10. New requirements go
-  in `docs/specs/`.
 
 ## Documentation
 
@@ -98,7 +94,7 @@ The index is [docs/README.md](docs/README.md).
 
 Read [docs/internals/traps.md](docs/internals/traps.md) before touching deletion code or
 resuming desktop work. The desktop app is not on `main`: inspect branch
-`feat/native-desktop` (`git worktree list`) first.
+`feat/clean-trust` (worktree `../tiny-cli-worktrees/clean-trust`) first.
 
 ## Language
 

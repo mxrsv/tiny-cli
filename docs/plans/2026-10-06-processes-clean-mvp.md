@@ -3,17 +3,16 @@
 Record: Active task plan
 Started: 2026-10-06
 Documentation checkout: `/Users/kyantran/Documents/Development/Personal/tiny-cli` (`main`)
-Implementation checkout: `/Users/kyantran/.codex/worktrees/tiny-pr-1/tiny-cli`, branch `feat/native-desktop` created on 2026-10-07 from PR #1 commit `fb07b4441b261543754ba2f4f4099a69a5f39e0d`
+Implementation checkout: `/Users/kyantran/.codex/worktrees/tiny-pr-1/tiny-cli`, branch `feat/native-desktop` created on 2026-10-07 from PR #1 commit `fb07b4441b261543754ba2f4f4099a69a5f39e0d`; work continues on `feat/clean-trust` (`/Users/kyantran/Documents/Development/Personal/tiny-cli-worktrees/clean-trust`) since 2026-10-09
 
 ## Requirements reference and delivery scope
 
-The [PRD Product Scope](../../_bmad-output/planning-artifacts/prd.md#product-scope)
+The [MVP spec](../specs/2026-10-06-processes-clean-mvp.md)
 owns PC-P1–PC-P5, PC-C1–PC-C6, and PC-D1–PC-D3. The user reconfirmed
 Processes + Clean on 2026-10-07. The approved
 [native/CLI boundary spec](../specs/2026-10-07-swiftui-cli-boundary.md)
-owns B1–B6 and the SwiftUI + retained Rust CLI direction. The
-[architecture](../../_bmad-output/planning-artifacts/architecture.md)
-records the replacement of the earlier Tauri shell choice. Do not duplicate
+owns B1–B6 and the SwiftUI + retained Rust CLI direction, which replaced the
+earlier Tauri shell choice. Do not duplicate
 product requirements here or expand scope to PR #1's Smart Scan/Space Lens/undo.
 
 ## Current follow-up: actions 1–5 with parallel lanes (2026-10-08)

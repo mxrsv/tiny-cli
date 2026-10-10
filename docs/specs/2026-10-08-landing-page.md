@@ -21,8 +21,7 @@ interview.
   scrolls. Phones and reduced-motion users get the same three steps as a static
   sequence.
 - **Pricing:** Free + Pro, open-core, Pro billed as a subscription. This
-  replaces the PRD's "free, no subscription" position (updated in the
-  [PRD](../../_bmad-output/planning-artifacts/prd.md)). The Pro feature list,
+  replaces the earlier "free, no subscription" position. The Pro feature list,
   Free tier limits and prices are not decided; the page shows them as drafts
   until they are.
 - **Stack and location:** Next.js in `site/` of this repository, with GSAP and
@@ -39,7 +38,7 @@ interview.
 
 Feature copy must match what the app actually does at publish time. The
 [native boundary spec](2026-10-07-swiftui-cli-boundary.md) and
-[PRD Product Scope](../../_bmad-output/planning-artifacts/prd.md#product-scope)
+[MVP spec](2026-10-06-processes-clean-mvp.md)
 describe planned behavior, not shipped behavior; planned capabilities are
 labelled as such.
 

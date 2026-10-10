@@ -46,8 +46,5 @@ JSON file under `$HOME`, so those three are the portable ones. There is no `cfg(
 A native macOS app is planned, not shipped. The current direction is the
 [SwiftUI and shared Rust core spec](../specs/2026-10-07-swiftui-cli-boundary.md): a
 `tiny-core` crate holds the operations, the CLI and a SwiftUI app both call it, the app
-through UniFFI. That work lives on branch `feat/native-desktop`, not on `main`.
-
-[`_bmad-output/planning-artifacts/architecture.md`](../../_bmad-output/planning-artifacts/architecture.md)
-and [`_bmad-output/project-context.md`](../../_bmad-output/project-context.md) still describe
-the earlier Tauri + React plan; where they disagree with the spec, the spec wins.
+through UniFFI. That work lives on branch `feat/clean-trust`, not on `main`; its scope is the
+[MVP spec](../specs/2026-10-06-processes-clean-mvp.md).

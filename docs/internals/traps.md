@@ -37,7 +37,6 @@ Things that are not obvious from reading one file.
 
 - **`Cargo.lock` is gitignored** while tiny is a single binary crate; do not commit it from
   `main`.
-- **The desktop planning documents disagree.** `_bmad-output/` describes Tauri + React; the
-  [2026-10-07 spec](../specs/2026-10-07-swiftui-cli-boundary.md) chose SwiftUI + UniFFI.
-  Neither app exists on `main`; inspect branch `feat/native-desktop` before resuming. See
-  [overview](overview.md#desktop-migration).
+- **The desktop app is not on `main`.** Inspect branch `feat/clean-trust` (worktree
+  `../tiny-cli-worktrees/clean-trust`) before resuming; `feat/native-desktop` is its older
+  base. See [overview](overview.md#desktop-migration).
