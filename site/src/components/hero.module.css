@@ -1,0 +1,17 @@
+.wrap { max-width: 1164px; margin: 0 auto; padding: 0 22px; }
+.head { padding-block: 56px 40px; text-align: center; }
+.head h1 { max-width: 8em; margin-inline: auto; }
+.intro { max-width: 34rem; margin: 18px auto 0; color: var(--ink-2); }
+.cta { display: grid; gap: 10px; justify-items: center; max-width: 30rem; margin: 28px auto 0; }
+
+.sample { margin-top: 6px; color: var(--ink-2); }
+
+/* Orbit placement, only while the pinned story runs. Everywhere else the
+   tiles sit in the grid owned by hero-story.module.css. Keep this query in
+   step with PIN_QUERY in hero-story/steps.ts. */
+@media (min-width: 1069px) and (prefers-reduced-motion: no-preference) {
+  .slot { position: absolute; z-index: 4; width: 210px; }
+  .disk { left: 0; top: 14%; }
+  .mem { right: 0; top: 34%; }
+  .trash { left: 0; bottom: 24px; }
+}

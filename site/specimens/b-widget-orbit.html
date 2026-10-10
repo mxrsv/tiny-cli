@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Specimen B · Widget orbit</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="macbook.css">
+<style>
+  /* B: the MacBook is ringed by glass widgets that show the three things
+     tiny reads (disk, memory, the Trash). A pale smoky-blue field sits behind
+     so the glass has something to refract. The header is centred and kept
+     narrower than the device so only the widgets reach past its edges. */
+  body {
+    background:
+      radial-gradient(40% 50% at 12% 30%, rgba(145,174,201,.45), transparent 70%),
+      radial-gradient(45% 55% at 90% 65%, rgba(145,174,201,.5), transparent 70%),
+      var(--canvas);
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px; }
+  .nav-top { display: flex; align-items: center; gap: 24px; padding-block: 16px; }
+  .nav-top .brand { margin-right: auto; }
+  .nav-top a { color: var(--ink); text-decoration: none; }
+  .head { padding-block: 56px 40px; text-align: center; }
+  .head h1 { max-width: 8em; margin-inline: auto; }
+  .head .intro { max-width: 34rem; margin: 18px auto 0; color: var(--ink-2); }
+  .cta { display: grid; gap: 10px; justify-items: center; max-width: 30rem; margin: 28px auto 0; }
+  .cta .waitlist { width: 100%; }
+  .stage { position: relative; padding: 24px 9% 96px; }
+  .tile {
+    position: absolute; z-index: 4; width: 210px; padding: 16px 18px; border-radius: 22px;
+    background: var(--glass); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  }
+  .tile .label { color: var(--ink-2); }
+  .tile .value { margin-top: 4px; }
+  .tile .meter { height: 6px; margin-top: 12px; border-radius: 3px; background: rgba(29,29,31,.08); overflow: hidden; }
+  .tile .meter i { display: block; height: 100%; background: var(--primary-deep); }
+  .tile.disk { left: 0; top: 14%; }
+  .tile.mem { right: 0; top: 34%; }
+  .tile.trash { left: 6%; bottom: 40px; }
+  .state { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--ink-2); }
+  .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #3f8f5b; }
+  @media (max-width: 734px) {
+    .nav-top .hide-s { display: none; }
+    .stage { padding: 8px 0 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stage .mbp { grid-column: 1 / -1; margin-bottom: 12px; }
+    .tile { position: static; width: auto; }
+    .tile.trash { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav-top t-callout" aria-label="Main">
+      <span class="brand t-strong">tiny</span>
+      <a class="hide-s" href="#">Features</a><a class="hide-s" href="#">Pricing</a><a class="hide-s" href="#">Docs</a>
+      <a class="link" href="https://github.com/mxrsv/tiny-cli">GitHub</a>
+    </nav>
+    <header class="head">
+      <h1 class="t-display">Know your Mac. Then clean it.</h1>
+      <div>
+        <p class="intro t-body">tiny shows what is using your disk and memory, explains why, and moves what you pick to the Trash. Every size is measured on your Mac, never estimated.</p>
+        <div class="cta">
+          <form class="waitlist" aria-label="Join the early access list">
+            <label for="email-b" hidden>Email address</label>
+            <input class="field t-body" id="email-b" type="email" placeholder="you@example.com" autocomplete="email" required>
+            <button class="btn btn-primary t-body t-strong" type="submit">Get early access</button>
+          </form>
+          <p class="form-note t-footnote">One email when the beta opens.</p>
+          <a class="link t-callout" href="https://github.com/mxrsv/tiny-cli">View source on GitHub ›</a>
+        </div>
+      </div>
+    </header>
+    <section class="stage" aria-label="tiny on a MacBook">
+      <div class="mbp"><div class="mbp-lid"><div class="mbp-screen"><div class="mbp-notch"></div></div></div><div class="mbp-base"></div></div>
+      <div class="tile disk"><p class="label t-callout">Macintosh HD</p><p class="value t-title t-num">61.4 GB free</p><div class="meter" role="img" aria-label="88 percent used"><i style="width:88%"></i></div></div>
+      <div class="tile mem"><p class="label t-callout">Memory pressure</p><p class="value t-title">Normal</p><p class="state t-footnote">Top: Docker, 3.1 GB</p></div>
+      <div class="tile trash"><p class="label t-callout">Ready for the Trash</p><p class="value t-title t-num">18.6 GB</p><p class="state t-footnote">4 categories, all Safe</p></div>
+    </section>
+  </div>
+  <script src="specimen.js"></script>
+</body>
+</html>

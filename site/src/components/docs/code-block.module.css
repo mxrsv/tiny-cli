@@ -1,0 +1,10 @@
+.block {
+  padding: 16px 20px;
+  overflow-x: auto;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  white-space: pre;
+}
+.block:focus-visible { outline: 3px solid var(--primary-deep); outline-offset: 2px; }

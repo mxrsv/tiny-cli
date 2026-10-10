@@ -1,0 +1,18 @@
+.layout {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 72px 22px 96px;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 720px);
+  justify-content: center;
+  gap: 32px 72px;
+  align-items: start;
+}
+.article { min-width: 0; }
+
+@media (max-width: 1068px) {
+  .layout { grid-template-columns: minmax(0, 720px); padding-top: 48px; }
+}
+@media (max-width: 734px) {
+  .layout { padding-top: 32px; padding-bottom: 64px; }
+}

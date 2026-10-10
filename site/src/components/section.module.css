@@ -1,0 +1,15 @@
+.section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 96px 22px;
+  scroll-margin-top: 72px;
+}
+.header { text-align: center; }
+.eyebrow { color: var(--primary-deep); }
+.title { margin-top: 8px; }
+.body { margin-top: 48px; }
+
+@media (max-width: 734px) {
+  .section { padding: 64px 22px; }
+  .body { margin-top: 32px; }
+}

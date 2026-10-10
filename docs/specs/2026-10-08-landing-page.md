@@ -1,6 +1,6 @@
 # Landing page for the tiny Mac app
 
-Status: Requirements approved 2026-10-08; Phase 0 design direction not started.
+Status: Requirements approved 2026-10-08; Phase 0 specimens ready for the direction choice ([plan](../plans/2026-10-09-landing-page.md)).
 Started: 2026-10-08
 
 ## Goal and approved decisions

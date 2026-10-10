@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Specimen C · Open engine</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="macbook.css">
+<style>
+  /* C: split hero. Copy on the left, the MacBook bleeding off the right
+     edge, and one glass strip under it that names the step the screen is on
+     and the Terminal command that does the same thing. Transparency is the
+     differentiator; the CLI stays a detail, not the pitch. */
+  body { background: linear-gradient(180deg, var(--surface) 0%, var(--canvas) 100%); }
+  .nav-top { display: flex; align-items: center; gap: 24px; max-width: 1200px; margin: 0 auto; padding: 16px 22px; }
+  .nav-top .brand { margin-right: auto; }
+  .nav-top a { color: var(--ink); text-decoration: none; }
+  .hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 96px; align-items: center; padding: 56px 0 88px max(22px, calc((100vw - 1156px) / 2)); }
+  .copy { display: grid; gap: 18px; }
+  .copy .intro { color: var(--ink-2); }
+  .tag { color: var(--primary-deep); }
+  .cta { display: grid; gap: 10px; margin-top: 8px; }
+  .device { position: relative; margin-right: -10%; }
+  .strip {
+    position: relative; z-index: 4; margin: 28px 18% 0 0; padding: 14px 18px; border-radius: 20px;
+    display: grid; gap: 10px;
+    background: var(--glass); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  }
+  .steps { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+  .steps li { padding: 4px 12px; border-radius: 980px; color: var(--ink-2); background: rgba(29,29,31,.05); }
+  .steps li[aria-current] { background: var(--primary); color: var(--ink); }
+  .cmd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+  .cmd .k { color: var(--ink-2); flex: none; }
+  .cmd code { max-width: 100%; overflow-x: auto; white-space: nowrap; color: var(--ink); }
+  @media (max-width: 1068px) {
+    .hero { grid-template-columns: 1fr; padding-right: 22px; }
+    .device { margin-right: 0; }
+  }
+  @media (max-width: 734px) {
+    .nav-top .hide-s { display: none; }
+    .hero { padding-top: 32px; padding-bottom: 48px; }
+    .strip { margin: 16px 0 0; }
+  }
+</style>
+</head>
+<body>
+  <nav class="nav-top t-callout" aria-label="Main">
+    <span class="brand t-strong">tiny</span>
+    <a class="hide-s" href="#">Features</a><a class="hide-s" href="#">Pricing</a><a class="hide-s" href="#">Docs</a>
+    <a class="link" href="https://github.com/mxrsv/tiny-cli">GitHub</a>
+  </nav>
+  <main class="hero">
+    <div class="copy">
+      <p class="tag t-lead">A Mac cleaner you can read</p>
+      <h1 class="t-display">Clean your Mac. See every step.</h1>
+      <p class="intro t-body">tiny lists each folder it will touch, how big it is and why it is safe. Pick what goes, and it lands in the Trash where you can still get it back.</p>
+      <div class="cta">
+        <form class="waitlist" aria-label="Join the early access list">
+          <label for="email-c" hidden>Email address</label>
+          <input class="field t-body" id="email-c" type="email" placeholder="you@example.com" autocomplete="email" required>
+          <button class="btn btn-primary t-body t-strong" type="submit">Get early access</button>
+        </form>
+        <p class="form-note t-footnote">One email when the beta opens.</p>
+        <a class="link t-callout" href="https://github.com/mxrsv/tiny-cli">View source on GitHub ›</a>
+      </div>
+    </div>
+    <div class="device">
+      <div class="mbp"><div class="mbp-lid"><div class="mbp-screen"><div class="mbp-notch"></div></div></div><div class="mbp-base"></div></div>
+      <div class="strip">
+        <ol class="steps t-callout" aria-label="What the screen shows">
+          <li>1 Processes</li><li>2 Scan</li><li aria-current="step">3 Clean to the Trash</li>
+        </ol>
+        <div class="cmd"><span class="k t-footnote">Same step in Terminal</span><code class="t-code">tiny clean --category xcode-derived --dry-run</code></div>
+      </div>
+    </div>
+  </main>
+  <script src="specimen.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+/* MacBook with a notch, drawn in CSS. The app screen is laid out at
+   1440 x 900 and scaled by its own CSS to the width of .screen, an inline-size container. */
+.mbp { width: 100%; max-width: 980px; margin-inline: auto; }
+.lid {
+  position: relative; background: #0c0c0e; border-radius: 22px 22px 6px 6px;
+  padding: 1.7% 1.7% 2.3%;
+  box-shadow: 0 0 0 1.5px #c8ccd2, 0 0 0 3px #e9ebee, 0 40px 80px -30px rgba(29, 41, 56, 0.45);
+}
+.screen {
+  position: relative; container-type: inline-size; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 8px;
+  background: #dfe7ef;
+}
+.notch {
+  position: absolute; top: 0; left: 50%; z-index: 3; transform: translateX(-50%);
+  width: 12.5%; height: 3.4%; background: #0c0c0e; border-radius: 0 0 10px 10px;
+}
+.base {
+  position: relative; width: 116%; margin-left: -8%; height: 0; padding-bottom: 2.6%;
+  background: linear-gradient(#eef0f2, #c5c9ce 70%, #9fa4ab);
+  border-radius: 0 0 18px 18px / 0 0 60% 60%;
+}
+.base::before {
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 15%; height: 45%; background: linear-gradient(#b9bdc3, #d8dbdf);
+  border-radius: 0 0 10px 10px;
+}

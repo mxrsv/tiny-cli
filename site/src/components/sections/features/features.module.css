@@ -1,0 +1,41 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 20px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 28px;
+  border-radius: 28px;
+}
+.clean { grid-column: span 4; }
+.measured { grid-column: span 2; }
+.processes { grid-column: span 3; }
+.scan { grid-column: span 3; }
+
+.title { color: var(--ink); }
+.badge {
+  align-self: flex-start;
+  margin-top: 10px;
+  padding: 2px 10px;
+  border: 1px solid var(--primary-deep);
+  border-radius: 980px;
+  color: var(--primary-deep);
+}
+.body { margin-top: 10px; color: var(--ink-2); }
+.visual { margin-top: auto; padding-top: 24px; }
+.lede { margin: 0 0 32px; text-align: center; color: var(--ink-2); }
+.note { margin-top: 20px; text-align: center; color: var(--ink-2); }
+
+@media (max-width: 1068px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clean { grid-column: span 2; }
+  .measured, .processes, .scan { grid-column: span 1; }
+}
+@media (max-width: 734px) {
+  .grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .clean, .measured, .processes, .scan { grid-column: auto; }
+  .tile { padding: 22px 20px; border-radius: 24px; }
+}

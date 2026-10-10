@@ -1,0 +1,95 @@
+/* Phase 0 specimen tokens. Throwaway: Phase 1 replaces this with the site's
+   real token file. Type steps copy the landing spec's typography standard;
+   motion copies docs/DESIGN-LANGUAGE.md. */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap");
+
+:root {
+  color-scheme: light;
+
+  /* Families */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+
+  /* Colour. Primary is fixed by the design language; the rest are supporting
+     choices tuned for contrast on a light page. */
+  --primary: #91aec9;        /* fill only: 2.31:1 on white, 7.29:1 under --ink */
+  --primary-deep: #3e5b78;   /* links and small accents on light: 7.06:1 */
+  --ink: #1d1d1f;
+  --ink-2: #555c66;
+  --canvas: #f5f7fa;
+  --surface: #ffffff;
+  --hairline: rgba(29, 29, 31, 0.1);
+  --glass: rgba(255, 255, 255, 0.62);
+  --glass-edge: rgba(255, 255, 255, 0.75);
+  --glass-shadow: 0 1px 1px rgba(29, 29, 31, 0.04), 0 12px 32px rgba(62, 91, 120, 0.14);
+
+  /* Motion */
+  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --quick: 0.2s;
+  --base: 0.35s;
+  --slow: 0.6s;
+}
+
+html, body { overflow-x: clip; }
+body {
+  margin: 0; min-height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Named type steps (≥1069 px values first) */
+.t-display  { font-size: 80px; line-height: 1.05;   font-weight: 600; letter-spacing: -0.015em; }
+.t-headline { font-size: 48px; line-height: 1.0835; font-weight: 600; letter-spacing: -0.003em; }
+.t-title    { font-size: 28px; line-height: 1.1429; font-weight: 600; letter-spacing: 0.007em; }
+.t-lead     { font-size: 21px; line-height: 1.381;  font-weight: 600; letter-spacing: 0.011em; }
+.t-body     { font-size: 17px; line-height: 1.4706; font-weight: 400; letter-spacing: -0.022em; }
+.t-callout  { font-size: 14px; line-height: 1.4286; font-weight: 400; letter-spacing: -0.016em; }
+.t-footnote { font-size: 12px; line-height: 1.3334; font-weight: 400; letter-spacing: -0.01em; }
+.t-code     { font-size: 14px; line-height: 1.4286; font-weight: 400; letter-spacing: 0; font-family: var(--font-mono); }
+.t-strong   { font-weight: 600; }
+.t-num      { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1068px) {
+  .t-display  { font-size: 64px; line-height: 1.0625; letter-spacing: -0.009em; }
+  .t-headline { font-size: 40px; line-height: 1.1;    letter-spacing: 0; }
+  .t-title    { font-size: 24px; line-height: 1.1667; letter-spacing: 0.009em; }
+  .t-lead     { font-size: 19px; line-height: 1.4211; letter-spacing: 0.012em; }
+}
+@media (max-width: 734px) {
+  .t-display  { font-size: 48px; line-height: 1.0835; letter-spacing: -0.003em; }
+  .t-headline { font-size: 32px; line-height: 1.125;  letter-spacing: 0.004em; }
+  .t-title    { font-size: 21px; line-height: 1.1905; letter-spacing: 0.011em; }
+  .t-lead     { font-size: 17px; line-height: 1.4706; letter-spacing: -0.022em; }
+}
+
+h1, h2, h3, p { margin: 0; text-wrap: balance; }
+
+/* Shared controls */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 22px; border-radius: 980px; border: 0;
+  cursor: pointer; text-decoration: none; font-family: inherit;
+  transition: background-color var(--quick) var(--ease), transform var(--quick) var(--ease);
+}
+.btn:active { transform: scale(0.96); }
+.btn:focus-visible, .field:focus-visible, .link:focus-visible { outline: 3px solid var(--primary-deep); outline-offset: 2px; }
+.btn-primary { background: var(--primary); color: var(--ink); }
+.btn-primary:hover { background: #a3bcd3; }
+.link { color: var(--primary-deep); text-decoration: none; }
+.link:hover { text-decoration: underline; }
+.field {
+  min-height: 44px; padding: 0 18px; border-radius: 980px; min-width: 0;
+  border: 1px solid var(--hairline); background: var(--surface); color: var(--ink);
+  font-family: inherit;
+}
+.waitlist { display: flex; gap: 8px; flex-wrap: wrap; }
+.waitlist .field { flex: 1 1 220px; }
+.form-note { color: var(--ink-2); }
+@media (max-width: 734px) { .waitlist .btn { flex: 1 1 100%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

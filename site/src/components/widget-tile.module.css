@@ -1,0 +1,6 @@
+.tile { padding: 16px 18px; border-radius: 22px; }
+.label { color: var(--ink-2); }
+.value { margin-top: 4px; }
+.meter { height: 6px; margin-top: 12px; border-radius: 3px; background: rgba(29, 29, 31, 0.08); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--primary-deep); }
+.state { margin-top: 8px; color: var(--ink-2); }

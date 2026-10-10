@@ -1,0 +1,33 @@
+/* A white pill that shrinks to its content and floats centred. White sits close to
+   the pale canvas, so the pill is separated by a hairline and shadow and its text is
+   heavier and larger than body copy; being opaque it stays legible over the black
+   MacBook bezel passing underneath. */
+.nav {
+  position: sticky;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 16px auto 0;
+  padding: 10px 24px;
+  border-radius: 980px;
+  background: var(--surface);
+  border: 1px solid rgba(29, 29, 31, 0.1);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(24px) saturate(1.6);
+}
+.nav a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.nav a.brand { font-weight: 700; }
+.nav a:focus-visible { outline: 3px solid var(--primary-deep); outline-offset: 3px; border-radius: 6px; }
+.nav a:hover { text-decoration: underline; }
+.nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 4px; }
+.brand { margin-right: 12px; display: inline-flex; align-items: center; gap: 8px; }
+.brand img { display: block; }
+
+@media (max-width: 734px) {
+  .nav { gap: 14px; padding: 10px 16px; font-size: 15px; }
+  .brand { margin-right: 2px; }
+}
