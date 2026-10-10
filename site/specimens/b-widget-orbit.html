@@ -9,7 +9,8 @@
 <style>
   /* B: the MacBook is ringed by glass widgets that show the three things
      tiny reads (disk, memory, the Trash). A pale smoky-blue field sits behind
-     so the glass has something to refract. */
+     so the glass has something to refract. The header is centred and kept
+     narrower than the device so only the widgets reach past its edges. */
   body {
     background:
       radial-gradient(40% 50% at 12% 30%, rgba(145,174,201,.45), transparent 70%),
@@ -20,10 +21,11 @@
   .nav-top { display: flex; align-items: center; gap: 24px; padding-block: 16px; }
   .nav-top .brand { margin-right: auto; }
   .nav-top a { color: var(--ink); text-decoration: none; }
-  .head { display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; align-items: end; padding-block: 48px 40px; }
-  .head > * { min-width: 0; }
-  .head .intro { color: var(--ink-2); }
-  .cta { display: grid; gap: 10px; margin-top: 22px; }
+  .head { padding-block: 56px 40px; text-align: center; }
+  .head h1 { max-width: 8em; margin-inline: auto; }
+  .head .intro { max-width: 34rem; margin: 18px auto 0; color: var(--ink-2); }
+  .cta { display: grid; gap: 10px; justify-items: center; max-width: 30rem; margin: 28px auto 0; }
+  .cta .waitlist { width: 100%; }
   .stage { position: relative; padding: 24px 9% 96px; }
   .tile {
     position: absolute; z-index: 4; width: 210px; padding: 16px 18px; border-radius: 22px;
@@ -39,7 +41,6 @@
   .tile.trash { left: 6%; bottom: 40px; }
   .state { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--ink-2); }
   .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #3f8f5b; }
-  @media (max-width: 1068px) { .head { grid-template-columns: 1fr; gap: 20px; } }
   @media (max-width: 734px) {
     .nav-top .hide-s { display: none; }
     .stage { padding: 8px 0 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

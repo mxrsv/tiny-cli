@@ -33,7 +33,9 @@ Safari; they need no build.
   free disk, memory pressure, ready for the Trash. They map onto the three
   steps of the pinned story (processes, scan, clean), so each can light up as
   its step plays. Busiest of the three; widgets stack under the device on
-  phones.
+  phones. Its header was a split (headline left, copy and form right) until
+  2026-10-10; the user switched it to A's centred header after the stretched
+  form read as spilling past the layout.
 - **C · Open engine.** Split hero with the MacBook bleeding off the right edge
   and a glass strip naming the current step and its equivalent `tiny` command.
   Leads with transparency but pulls the CLI closer to the pitch than the spec
@@ -57,6 +59,11 @@ Findings that carry into Phase 1 whichever direction wins:
   the MacBook is about a quarter of its size. The phone fallback for the
   pinned story should crop to the app window rather than show the whole
   device.
+- **Hero copy and form stay inside the device's edges.** Only the widgets
+  may reach past the MacBook. On wide screens a form stretched to its
+  column's full width, past the end of the copy above it, reads as spilling
+  out of the layout even inside the container. Phones keep full-width
+  controls.
 - **Waitlist form:** the specimens' form sends nothing and says so on submit.
   The backend stays an open decision in the spec.
 
