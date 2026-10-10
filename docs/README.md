@@ -35,7 +35,7 @@ There is no release runbook: tiny has no tags or published artifacts yet. CI run
 
 ## Design language
 
-- [Design language](DESIGN-LANGUAGE.md) — the approved primary colour, flexible UI guidance,
+- [Design language](DESIGN-LANGUAGE.md) — the approved colour system, flexible UI guidance,
   and motion rules shared by the desktop app and the landing page.
 
 ## Records

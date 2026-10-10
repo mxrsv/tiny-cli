@@ -1,23 +1,58 @@
 # Design language
 
-The visual guidance for tiny: the approved primary colour, room for each surface to evolve,
+The visual guidance for tiny: the approved colour system, room for each surface to evolve,
 and shared motion rules. The landing type scale lives in the
 [landing spec](specs/2026-10-08-landing-page.md#typography-standard).
 
-## Primary colour and UI flexibility
+## Colour
 
-Approved on 2026-10-10. This is design guidance, not a claim that the palette is already
-integrated throughout the app.
+Approved on 2026-10-11, replacing the smoky blue `#91AEC9` approved on 2026-10-10. This is
+design guidance, not a claim that the palette is already integrated in the app or on the
+landing page. Changing the primary colour requires an explicit user decision.
 
-- **Primary colour: smoky blue `#91AEC9`.** Use this as tiny's brand accent rather than
-  choosing a new primary colour for each screen. Changing the primary colour requires
-  an explicit user decision.
-- Keep colours consistent within a surface and text, icons and controls readable.
-  Verify contrast for the actual foreground/background pairs. Status and risk must also
+### Brand ramp: clear blue
+
+One OKLCH ramp at hue 250 with chroma up to 0.11. Take brand colours from these steps
+instead of picking new hex values per element.
+
+| 50 | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `#F1F8FF` | `#DDEDFF` | `#BADBFF` | `#97C6F7` | `#73ADE7` | `#5590CC` | `#3D75AC` | `#2A5B8A` | `#1C4267` | `#0B2843` |
+
+- **Primary is step 600 `#3D75AC`.** It carries white text at 4.8:1, so it is the lightest
+  step for filled buttons and links on light backgrounds.
+- Step 500 fills progress, step 100 is the quiet tint for tracks, and step 900 is text on
+  brand tints.
+- Smoky blue `#91AEC9` survives only as a tint inside gradients. Its chroma is too low to
+  pair as a flat UI colour.
+
+### Where colour goes
+
+- Colour appears in one or two large moments per surface, such as the landing hero glow and
+  the final call to action. Everything else is neutral: canvas white or `#F5F5F5`, text
+  `#0A0A0A`, secondary text `#6B6B6B` and hairlines in 8% black.
+- On the landing page the main call to action is dark ink, not brand blue. In the app,
+  primary buttons use step 600, following the macOS accent convention.
+- Status, actions and progress never share one tint. A success tag uses a green ramp at the
+  same chroma (fill `#DBF2DF`, text `#2B663B`) plus a check mark. A secondary button is white
+  with a step 300 outline and step 700 text.
+- Verify contrast for the actual foreground/background pairs. Status and risk must also
   have a label or symbol; colour alone must not carry their meaning.
-- Supporting colours are adjustable: backgrounds, text, borders, selection fills and
-  semantic colours may evolve to suit the surface and preserve contrast. The Clean
-  preview's supporting hex values are reference choices, not mandatory tokens.
+- Supporting colours stay adjustable within these rules: backgrounds, borders, selection
+  fills and semantic colours may evolve to suit the surface and preserve contrast.
+
+### Headlines and references
+
+- No serif display face. The landing hero pairs one headline line with a glass chip that
+  shows a real command, such as `tiny clean --dry-run` from the
+  [clean guide](user/clean.md).
+- Learn principles from reference apps such as Supaste, CoolDock and Letra, but do not copy
+  what identifies them: an italic serif second headline line, a dark-to-white sky gradient
+  under a centred Apple-logo eyebrow, a floating black navigation pill, rolling-hills
+  wallpaper behind every screenshot, or their exact blues.
+
+## UI flexibility
+
 - Layout, navigation placement, information hierarchy, grouping, density and component
   arrangement remain flexible. The Clean preview is a colour study, not a required
   template for other screens.
@@ -27,7 +62,7 @@ integrated throughout the app.
   visually consistent within each surface.
 
 Evaluate future UI changes against their task and content. Follow the project's existing
-visual review gate; approval of this primary colour does not pre-approve future layouts.
+visual review gate; approval of this colour system does not pre-approve future layouts.
 
 ## Motion
 
